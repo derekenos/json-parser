@@ -72,9 +72,7 @@ class Parser:
         # the character, or None if the stream has been exhausted.
         while True:
             c = self.next_char()
-            # End of binary stream yields an empty str object.
-            if c == '':
-                # Return a byte string.
+            if c == EOF:
                 return EOF
             if not c.isspace():
                 return c
