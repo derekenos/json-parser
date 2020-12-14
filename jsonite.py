@@ -236,9 +236,66 @@ class Parser:
             )
 
 
+class Converter:
+    def __init__(self, parser):
+        self.parser = parser
+
+    def convert(self, _type, value):
+        if _type.endswith('NULL'):
+            return None
+        if _type.endswith('STRING'):
+            return ''.join(value)
+        if _type.endswith('NUMBER'):
+            return float(''.join(value))
+        raise NotImplementedError(_type, value)
+
+    def yield_paths(self, paths):
+        # Split the paths on the dots.
+        path = []
+        for type_value in self.parser.parse():
+            if isinstance(type_value, tuple):
+                _type, value = type_value
+            else:
+                _type, value  = type_value, None
+            if _type == 'OBJECT_OPEN':
+                if path and isinstance(path[-1], int):
+                    path[-1] += 1
+                path.append('.')
+                continue
+            elif _type == 'OBJECT_CLOSE':
+                path.pop()
+                continue
+            elif _type == 'ARRAY_OPEN':
+                if path and isinstance(path[-1], int):
+                    path[-1] += 1
+                path.append(-1)
+                continue
+            elif _type == 'ARRAY_CLOSE':
+                path.pop()
+                continue
+            elif _type == 'OBJECT_KEY':
+                path[-1] = ''.join(value)
+            elif _type.startswith('ARRAY_VALUE_'):
+                path[-1] += 1
+                if path in paths:
+                    yield path, self.convert(_type, value)
+            elif _type.startswith('OBJECT_VALUE_'):
+                if path in paths:
+                    yield path, self.convert(_type, value)
+
 # TEST
 if __name__ == '__main__':
     fh = open("test_inputs/api_weather_gov_points.json", "r", encoding="utf-8")
+
+    # DEBUG
+    for path, value in Converter(Parser(fh)).yield_paths((
+            ['@context', 1, 'unitCode', '@type'],
+            ['properties', 'relativeLocation', 'geometry', 'coordinates', 0 ],
+
+    )):
+        print(path, value)
+    exit(0)
+
     parser = Parser(fh)
     for type_value in parser.parse():
         if not isinstance(type_value, tuple):
