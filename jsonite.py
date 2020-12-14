@@ -135,13 +135,16 @@ class Parser:
             for x in self.parse_next():
                 if x is None:
                     return
-                if isinstance(x, tuple):
+                if not isinstance(x, tuple):
+                    print(x)
+                else:
                     t, v = x
                     if t == 'OBJECT_KEY' or t.endswith('STRING'):
-                        v = ''.join(v)
-                    print(t, '"{}"'.format(v))
-                else:
-                    print(x)
+                        print(t, '"{}"'.format(''.join(v)))
+                    elif t.endswith('NUMBER'):
+                        print(t, '{}'.format(float(''.join(v))))
+                    else:
+                        raise NotImplementedError
 
     def parse_next(self):
         c, match = self.expect(self.expect_stack.pop())
