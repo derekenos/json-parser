@@ -1,24 +1,22 @@
 
-from collections import deque
-
 class UnexpectedCharacter(Exception):
     def __init__(self, c, i):
         super().__init__(
-            'Unexpected character "{}" at position {}'.format(c, i)
+            b'Unexpected character "{}" at position {}'.format(c, i)
         )
 
-OBJECT_OPEN = '{'
-ARRAY_OPEN = '['
-STRING_START = '"'
-STRING_TERMINATOR = '"'
-NULL_START = 'n'
-IS_NUMBER_START = lambda c: c == '-' or c.isdigit()
+OBJECT_OPEN = b'{'
+ARRAY_OPEN = b'['
+STRING_START = b'"'
+STRING_TERMINATOR = b'"'
+NULL_START = b'n'
+IS_NUMBER_START = lambda c: c == b'-' or c.isdigit()
 OBJECT_KEY_START = STRING_START
-OBJECT_CLOSE = '}'
-ARRAY_CLOSE = ']'
-KV_SEP = ':'
-ITEM_SEP = ','
-EOF = None
+OBJECT_CLOSE = b'}'
+ARRAY_CLOSE = b']'
+KV_SEP = b':'
+ITEM_SEP = b','
+EOF = b''
 IS_NO_MATCH = lambda c: False
 
 IS_VALUE_START = lambda c: (
@@ -49,7 +47,7 @@ IS_NEXT_OBJECT_KEY_START = lambda c: c == ITEM_SEP or c == OBJECT_KEY_START
 IS_NEXT_ARRAY_VALUE_START = lambda c: c == ITEM_SEP or IS_ARRAY_VALUE_START(c)
 
 is_not_string_terminator = lambda c: c != STRING_TERMINATOR
-is_number_char = lambda c: c.isdigit() or c == '.'
+is_number_char = lambda c: c.isdigit() or c == b'.'
 
 class Parser:
     def __init__(self, stream):
@@ -74,9 +72,10 @@ class Parser:
         # the character, or None if the stream has been exhausted.
         while True:
             c = self.next_char()
+            # End of binary stream yields an empty str object.
             if c == '':
-                # End of stream has been reached, return None.
-                return None
+                # Return a byte string.
+                return EOF
             if not c.isspace():
                 return c
 
@@ -91,12 +90,10 @@ class Parser:
         c = self.next_nonspace_char()
         while isinstance(expected, tuple):
             optional, expected = expected
-            if ((hasattr(optional, '__call__') and optional(c))
-                or c == optional):
+            if (not hasattr(optional, 'decode') and optional(c)) or c == optional:
                 self.expect_stack.append(expected)
                 return c, optional
-        if ((hasattr(expected, '__call__') and expected(c))
-            or c == expected):
+        if (not hasattr(expected, 'decode') and expected(c)) or c == expected:
             return c, expected
         raise UnexpectedCharacter(c, self.char_num)
 
@@ -104,7 +101,7 @@ class Parser:
         escaped = 0
         while True:
             c = self.next_char()
-            if c == '\\':
+            if c == b'\\':
                 escaped ^= 1
             elif escaped == 0 and not pred(c):
                 self.stuff_char(c)
@@ -130,7 +127,7 @@ class Parser:
         yield from self.yield_while(is_number_char)
 
     def parse(self):
-        self.expect_stack = deque(( EOF, IS_VALUE_START, ), 32)
+        self.expect_stack = [ EOF, IS_VALUE_START ]
         while True:
             for x in self.parse_next():
                 if x is None:
@@ -219,9 +216,9 @@ class Parser:
                 '{}NUMBER'.format(value_context), self.parse_number(c)
             )
         elif c == NULL_START:
-            self.expect('u')
-            self.expect('l')
-            self.expect('l')
+            self.expect(b'u')
+            self.expect(b'l')
+            self.expect(b'l')
             yield '{}NULL'.format(value_context)
         else:
             raise NotImplementedError(c)
@@ -235,24 +232,23 @@ class Parser:
                 (IS_NEXT_OBJECT_KEY_START, self.expect_stack.pop())
             )
 
-
-class Converter:
-    def __init__(self, parser):
-        self.parser = parser
-
     def convert(self, _type, value):
+        # Convert a parsed value to a Python type.
         if _type.endswith('NULL'):
             return None
         if _type.endswith('STRING'):
-            return ''.join(value)
+            return b''.join(value)
         if _type.endswith('NUMBER'):
-            return float(''.join(value))
+            return float(b''.join(value))
         raise NotImplementedError(_type, value)
 
     def yield_paths(self, paths):
-        # Split the paths on the dots.
+        # Yield ( <path>, <value-generator> ) tuples for all specified paths
+        # that exist in the data.
+        # paths must be an iterable of lists having the format:
+        #   [ <object-key-or-array-index>, ... ]
         path = []
-        for type_value in self.parser.parse():
+        for type_value in self.parse():
             if isinstance(type_value, tuple):
                 _type, value = type_value
             else:
@@ -260,7 +256,7 @@ class Converter:
             if _type == 'OBJECT_OPEN':
                 if path and isinstance(path[-1], int):
                     path[-1] += 1
-                path.append('.')
+                path.append(b'.')
                 continue
             elif _type == 'OBJECT_CLOSE':
                 path.pop()
@@ -274,7 +270,7 @@ class Converter:
                 path.pop()
                 continue
             elif _type == 'OBJECT_KEY':
-                path[-1] = ''.join(value)
+                path[-1] = b''.join(value)
             elif _type.startswith('ARRAY_VALUE_'):
                 path[-1] += 1
                 if path in paths:
@@ -285,12 +281,12 @@ class Converter:
 
 # TEST
 if __name__ == '__main__':
-    fh = open("test_inputs/api_weather_gov_points.json", "r", encoding="utf-8")
+    fh = open("test_inputs/api_weather_gov_points.json", "rb")
 
     # DEBUG
-    for path, value in Converter(Parser(fh)).yield_paths((
-            ['@context', 1, 'unitCode', '@type'],
-            ['properties', 'relativeLocation', 'geometry', 'coordinates', 0 ],
+    for path, value in Parser(fh).yield_paths((
+            [b'@context', 1, b'unitCode', b'@type'],
+            [b'properties', b'relativeLocation', b'geometry', b'coordinates', 0 ],
 
     )):
         print(path, value)
