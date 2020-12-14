@@ -135,16 +135,7 @@ class Parser:
             for x in self.parse_next():
                 if x is None:
                     return
-                if not isinstance(x, tuple):
-                    print(x)
-                else:
-                    t, v = x
-                    if t == 'OBJECT_KEY' or t.endswith('STRING'):
-                        print(t, '"{}"'.format(''.join(v)))
-                    elif t.endswith('NUMBER'):
-                        print(t, '{}'.format(float(''.join(v))))
-                    else:
-                        raise NotImplementedError
+                yield x
 
     def parse_next(self):
         c, match = self.expect(self.expect_stack.pop())
@@ -227,6 +218,11 @@ class Parser:
             yield from self.with_drain(
                 '{}NUMBER'.format(value_context), self.parse_number(c)
             )
+        elif c == NULL_START:
+            self.expect('u')
+            self.expect('l')
+            self.expect('l')
+            yield '{}NULL'.format(value_context)
         else:
             raise NotImplementedError(c)
 
@@ -243,4 +239,15 @@ class Parser:
 # TEST
 if __name__ == '__main__':
     fh = open("test_inputs/api_weather_gov_points.json", "r", encoding="utf-8")
-    Parser(fh).parse()
+    parser = Parser(fh)
+    for type_value in parser.parse():
+        if not isinstance(type_value, tuple):
+            print(type_value)
+            continue
+        _type, value = type_value
+        if _type == 'OBJECT_KEY' or _type.endswith('STRING'):
+            print(_type, '"{}"'.format(''.join(value)))
+        elif _type.endswith('NUMBER'):
+            print(_type, '{}'.format(float(''.join(value))))
+        else:
+            raise NotImplementedError
