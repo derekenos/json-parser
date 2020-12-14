@@ -1,0 +1,94 @@
+{
+    "@context": [
+        "https://geojson.org/geojson-ld/geojson-context.jsonld",
+        {
+            "@version": "1.1",
+            "wx": "https://api.weather.gov/ontology#",
+            "s": "https://schema.org/",
+            "geo": "http://www.opengis.net/ont/geosparql#",
+            "unit": "http://codes.wmo.int/common/unit/",
+            "@vocab": "https://api.weather.gov/ontology#",
+            "geometry": {
+                "@id": "s:GeoCoordinates",
+                "@type": "geo:wktLiteral"
+            },
+            "city": "s:addressLocality",
+            "state": "s:addressRegion",
+            "distance": {
+                "@id": "s:Distance",
+                "@type": "s:QuantitativeValue"
+            },
+            "bearing": {
+                "@type": "s:QuantitativeValue"
+            },
+            "value": {
+                "@id": "s:value"
+            },
+            "unitCode": {
+                "@id": "s:unitCode",
+                "@type": "@id"
+            },
+            "forecastOffice": {
+                "@type": "@id"
+            },
+            "forecastGridData": {
+                "@type": "@id"
+            },
+            "publicZone": {
+                "@type": "@id"
+            },
+            "county": {
+                "@type": "@id"
+            }
+        }
+    ],
+    "id": "https://api.weather.gov/points/41.5047,-73.9697",
+    "type": "Feature",
+    "geometry": {
+        "type": "Point",
+        "coordinates": [
+            -73.969700000000003,
+            41.5047
+        ]
+    },
+    "properties": {
+        "@id": "https://api.weather.gov/points/41.5047,-73.9697",
+        "@type": "wx:Point",
+        "cwa": "ALY",
+        "forecastOffice": "https://api.weather.gov/offices/ALY",
+        "gridId": "ALY",
+        "gridX": 59,
+        "gridY": 5,
+        "forecast": "https://api.weather.gov/gridpoints/ALY/59,5/forecast",
+        "forecastHourly": "https://api.weather.gov/gridpoints/ALY/59,5/forecast/hourly",
+        "forecastGridData": "https://api.weather.gov/gridpoints/ALY/59,5",
+        "observationStations": "https://api.weather.gov/gridpoints/ALY/59,5/stations",
+        "relativeLocation": {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -73.964735000000005,
+                    41.503239999999998
+                ]
+            },
+            "properties": {
+                "city": "Beacon",
+                "state": "NY",
+                "distance": {
+                    "value": 444.19104758635001,
+                    "unitCode": "unit:m"
+                },
+                "bearing": {
+                    "value": 291,
+                    "unitCode": "unit:degrees_true"
+                }
+            }
+        },
+        "forecastZone": "https://api.weather.gov/zones/forecast/NYZ065",
+        "county": "https://api.weather.gov/zones/county/NYC027",
+        "fireWeatherZone": "https://api.weather.gov/zones/fire/NYZ065",
+        "timeZone": "America/New_York",
+        "radarStation": "KOKX"
+    }
+}
