@@ -48,8 +48,49 @@ parser = Parser(fh)
     # ([b'@context', 1, b'@version'], b'1.1')
     ```
 
+## CLI
+
+```
+$ python3 jsonite.py --help
+usage: jsonite.py [-h] [--file FILE | --string STRING] [--action {load,parse}]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --file FILE
+  --string STRING
+  --action {load,parse}
+```
+
+You must specify either `--file=<file-path>` or `--string='<some-json>'`, and the default action is `load`.
+
+#### String loading example
+
+```
+$ python3 jsonite.py --string='[1, 2, {"three": 4}]' --action=load
+```
+output:
+```
+[1, 2, {b'three': 4}]
+```
+
+#### String parsing example
+```
+$ python3 jsonite.py --string='[1, 2, {"three": 4}]' --action=parse
+```
+output:
+```
+ARRAY_OPEN None
+ARRAY_VALUE_NUMBER 1
+ARRAY_VALUE_NUMBER 2
+OBJECT_OPEN None
+OBJECT_KEY b'three'
+OBJECT_VALUE_NUMBER 4
+OBJECT_CLOSE None
+ARRAY_CLOSE None
+```
+
 ## Deficiencies
 
 - Deals entirely in byte strings / doesn't support any decoding
-- `yield_paths()` only yields scalar values (i.e. strings, numbers, nulls) and not containers (i.e. arrays and objects)
+- `yield_paths()` only yields scalar values (i.e. strings, numbers, nulls, trues, falses) and not containers (i.e. arrays and objects)
 - ... probably a ton of other things that are outside my current use-case ...
