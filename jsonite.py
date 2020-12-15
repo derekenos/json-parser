@@ -167,13 +167,8 @@ class Parser:
         # Yield the specified (event, gen) pair and afterward, if necessary,
         # consume the generator to ensure that the stream read pointer is
         # advanced as expected.
-        # Read the current char_num for later comparison to determine whether
-        # any data was consumed from the generator.
-        char_num = self.char_num
         yield event, gen
-        if self.char_num == char_num and gen is not None:
-            # char_num has not been incremented and gen is a generator, so
-            # consume it.
+        if gen is not None:
             for _ in gen:
                 pass
 
