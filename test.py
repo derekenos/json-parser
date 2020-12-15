@@ -28,6 +28,16 @@ def _assertRaises(exc, fn, *args, **kwargs):
     else:
         raise DidNotRaise
 
+def _assertIsInstance(v, cls):
+    if not isinstance(v, cls):
+        raise AssertionError(
+            f'Value ({repr(value)}) is not of type ({repr(cls)})'
+        )
+
+_assertIsInt = lambda v: _assertIsInstance(v, int)
+_assertIsFloat = lambda v: _assertIsInstance(v, float)
+
+
 ###############################################################################
 # Parsing helper
 ###############################################################################
@@ -146,19 +156,29 @@ def test_string_conversion():
     )
 
 def test_single_digit_conversion():
-    _assertEqual(Parser.convert(None, 'NUMBER', (b'0',)), 0)
+    v = Parser.convert(None, 'NUMBER', (b'0',))
+    _assertIsInt(v)
+    _assertEqual(v, 0)
 
 def test_double_digit_conversion():
-    _assertEqual(Parser.convert(None, 'NUMBER', (b'13',)), 13)
+    v = Parser.convert(None, 'NUMBER', (b'13',))
+    _assertIsInt(v)
+    _assertEqual(v, 13)
 
 def test_negative_digit_conversion():
-    _assertEqual(Parser.convert(None, 'NUMBER', (b'-3',)), -3)
+    v = Parser.convert(None, 'NUMBER', (b'-3',))
+    _assertIsInt(v)
+    _assertEqual(v, -3)
 
 def test_float_conversion():
-    _assertEqual(Parser.convert(None, 'NUMBER', (b'3.1415',)), 3.1415)
+    v = Parser.convert(None, 'NUMBER', (b'3.1415',))
+    _assertIsFloat(v)
+    _assertEqual(v, 3.1415)
 
 def test_negative_float_conversion():
-    _assertEqual(Parser.convert(None, 'NUMBER', (b'-3.1415',)), -3.1415)
+    v = Parser.convert(None, 'NUMBER', (b'-3.1415',))
+    _assertIsFloat(v)
+    _assertEqual(v, -3.1415)
 
 def test_null_conversion():
     _assertEqual(Parser.convert(None, 'NULL', None), None)

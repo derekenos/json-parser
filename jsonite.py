@@ -10,6 +10,12 @@ class UnexpectedCharacter(Exception):
         )
 
 ###############################################################################
+# Constants
+###############################################################################
+
+PERIOD = b'.'
+
+###############################################################################
 # Matchers
 #
 # Matchers are character strings or predicate functions that are used to both
@@ -197,7 +203,7 @@ class Parser:
         yield from self.yield_while(is_digit)
         # Check to see if the next char is a decimal point.
         c = self.next_char()
-        if c != b'.':
+        if c != PERIOD:
             # Not a decimal point so stuff it back and return.
             self.stuff_char(c)
             return
@@ -431,7 +437,9 @@ class Parser:
         if (event == Events.ARRAY_VALUE_NUMBER
             or event == Events.OBJECT_VALUE_NUMBER
             or event == Events.NUMBER):
-            return float(b''.join(value))
+            s = b''.join(value)
+            # Cast to either float or int based on presence of a decimal place.
+            return float(s) if PERIOD in s else int(s)
         raise NotImplementedError(event, value)
 
     def yield_paths(self, paths):
@@ -458,7 +466,7 @@ class Parser:
                     path[-1] += 1
                 # Append an empty object indicator to the current path, to be
                 # overwritten by the next parsed key.
-                path.append(b'.')
+                path.append(PERIOD)
                 continue
 
             elif event == Events.OBJECT_CLOSE:
@@ -614,15 +622,23 @@ class Parser:
 
 if __name__ == '__main__':
     import argparse
+    from io import BytesIO
     from pprint import pprint
 
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('input_file', type=argparse.FileType('rb'))
+
+    g = arg_parser.add_mutually_exclusive_group()
+    g.add_argument('--file', type=argparse.FileType('rb'))
+    g.add_argument('--string', type=str)
+
     arg_parser.add_argument('--action', choices=('load', 'parse'),
                             default="load")
     args = arg_parser.parse_args()
 
-    parser = Parser(args.input_file)
+    if args.string:
+        args.file = BytesIO(args.string.encode('utf-8'))
+
+    parser = Parser(args.file)
 
     if args.action == 'load':
         pprint(parser.load())
