@@ -79,6 +79,48 @@ def test_empty_object():
 
 
 ###############################################################################
+# Test Arrays
+###############################################################################
+
+def test_single_element_array():
+    _assertEqual(
+        parse(b'[1]'),
+        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', b'1'), 'ARRAY_CLOSE']
+    )
+
+def test_single_element_array_with_trailing_comma():
+    _assertEqual(
+        parse(b'[1]'),
+        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', b'1'), 'ARRAY_CLOSE']
+    )
+
+###############################################################################
+# Test Objects
+###############################################################################
+
+def test_single_item_object():
+    _assertEqual(
+        parse(b'{"a": 0}'),
+        [
+            'OBJECT_OPEN',
+            ('OBJECT_KEY', b'a'),
+            ('OBJECT_VALUE_NUMBER', b'0'),
+            'OBJECT_CLOSE'
+        ]
+    )
+
+def test_single_item_object_with_trailing_comma():
+    _assertEqual(
+        parse(b'{"a": 0,}'),
+        [
+            'OBJECT_OPEN',
+            ('OBJECT_KEY', b'a'),
+            ('OBJECT_VALUE_NUMBER', b'0'),
+            'OBJECT_CLOSE'
+        ]
+    )
+
+###############################################################################
 # Test value conversions
 ###############################################################################
 
