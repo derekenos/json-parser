@@ -22,6 +22,8 @@ class Matchers:
     STRING_START = b'"'
     STRING_TERMINATOR = b'"'
     NULL_START = b'n'
+    TRUE_START = b't'
+    FALSE_START = b'f'
     IS_NUMBER_START = lambda c: c == b'-' or c.isdigit()
     OBJECT_CLOSE = b'}'
     ARRAY_CLOSE = b']'
@@ -37,6 +39,8 @@ Matchers.IS_VALUE_START = lambda c: (
     or c == Matchers.STRING_START
     or Matchers.IS_NUMBER_START(c)
     or c == Matchers.NULL_START
+    or c == Matchers.TRUE_START
+    or c == Matchers.FALSE_START
 )
 Matchers.IS_OBJECT_VALUE_START = lambda c: Matchers.IS_VALUE_START(c)
 Matchers.IS_ARRAY_VALUE_START = lambda c: Matchers.IS_VALUE_START(c)
@@ -58,16 +62,22 @@ class Events:
     ARRAY_OPEN = 'ARRAY_OPEN'
     ARRAY_CLOSE = 'ARRAY_CLOSE'
     OBJECT_KEY = 'OBJECT_KEY'
-    EOF = 'END_OF_FILE'
     ARRAY_VALUE_STRING = 'ARRAY_VALUE_STRING'
     ARRAY_VALUE_NUMBER = 'ARRAY_VALUE_NUMBER'
     ARRAY_VALUE_NULL = 'ARRAY_VALUE_NULL'
+    ARRAY_VALUE_TRUE = 'ARRAY_VALUE_TRUE'
+    ARRAY_VALUE_FALSE = 'ARRAY_VALUE_FALSE'
     OBJECT_VALUE_STRING = 'OBJECT_VALUE_STRING'
     OBJECT_VALUE_NUMBER = 'OBJECT_VALUE_NUMBER'
     OBJECT_VALUE_NULL = 'OBJECT_VALUE_NULL'
+    OBJECT_VALUE_TRUE = 'OBJECT_VALUE_TRUE'
+    OBJECT_VALUE_FALSE = 'OBJECT_VALUE_FALSE'
     STRING = 'STRING'
     NUMBER = 'NUMBER'
     NULL = 'NULL'
+    TRUE = 'TRUE'
+    FALSE = 'FALSE'
+    EOF = 'END_OF_FILE'
 
 ###############################################################################
 # Helpers
@@ -354,6 +364,33 @@ class Parser:
             else:
                 yield Events.NULL
 
+        elif c == Matchers.TRUE_START:
+            # Char is a true initiator (i.e. 't')
+            # Expect the next 3 chars to be 'rue' and yield the event.
+            self.expect(b'r')
+            self.expect(b'u')
+            self.expect(b'e')
+            if match == Matchers.IS_OBJECT_VALUE_START:
+                yield Events.OBJECT_VALUE_TRUE
+            elif match == Matchers.IS_ARRAY_VALUE_START:
+                yield Events.ARRAY_VALUE_TRUE
+            else:
+                yield Events.TRUE
+
+        elif c == Matchers.FALSE_START:
+            # Char is a false initiator (i.e. 'f')
+            # Expect the next 4 chars to be 'alse' and yield the event.
+            self.expect(b'a')
+            self.expect(b'l')
+            self.expect(b's')
+            self.expect(b'e')
+            if match == Matchers.IS_OBJECT_VALUE_START:
+                yield Events.OBJECT_VALUE_FALSE
+            elif match == Matchers.IS_ARRAY_VALUE_START:
+                yield Events.ARRAY_VALUE_FALSE
+            else:
+                yield Events.FALSE
+
         else:
             raise NotImplementedError(c)
 
@@ -378,6 +415,14 @@ class Parser:
             or event == Events.OBJECT_VALUE_NULL
             or event == Events.NULL):
             return None
+        if (event == Events.ARRAY_VALUE_TRUE
+            or event == Events.OBJECT_VALUE_TRUE
+            or event == Events.TRUE):
+            return True
+        if (event == Events.ARRAY_VALUE_FALSE
+            or event == Events.OBJECT_VALUE_FALSE
+            or event == Events.FALSE):
+            return False
         if (event == Events.ARRAY_VALUE_STRING
             or event == Events.OBJECT_VALUE_STRING
             or event == Events.STRING
@@ -445,7 +490,9 @@ class Parser:
 
             elif (event == Events.ARRAY_VALUE_STRING
                   or event == Events.ARRAY_VALUE_NUMBER
-                  or event == Events.ARRAY_VALUE_NULL):
+                  or event == Events.ARRAY_VALUE_NULL
+                  or event == Events.ARRAY_VALUE_TRUE
+                  or event == Events.ARRAY_VALUE_FALSE):
                 # We parsed an array value.
                 # Increment the current path node array index.
                 path[-1] += 1
@@ -460,7 +507,9 @@ class Parser:
 
             elif (event == Events.OBJECT_VALUE_STRING
                   or event == Events.OBJECT_VALUE_NUMBER
-                  or event == Events.OBJECT_VALUE_NULL):
+                  or event == Events.OBJECT_VALUE_NULL
+                  or event == Events.OBJECT_VALUE_TRUE
+                  or event == Events.OBJECT_VALUE_FALSE):
                 # We parsed an object value.
                 # For each unyielded path, attempt to match it against the
                 # current path. If it matches, yield the event and remove the
@@ -484,7 +533,9 @@ class Parser:
         # If it's a single scalar value, convert and return it.
         if (event == Events.STRING
             or event == Events.NUMBER
-            or event == Events.NULL):
+            or event == Events.NULL
+            or event == Events.TRUE
+            or event == Events.FALSE):
             return self.convert(event, value)
 
         # Create an initial, root object to represent the initial container.
@@ -538,7 +589,9 @@ class Parser:
                 close_container()
             elif (event == Events.ARRAY_VALUE_STRING
                   or event == Events.ARRAY_VALUE_NUMBER
-                  or event == Events.ARRAY_VALUE_NULL):
+                  or event == Events.ARRAY_VALUE_NULL
+                  or event == Events.ARRAY_VALUE_TRUE
+                  or event == Events.ARRAY_VALUE_FALSE):
                 # We just parsed an array value.
                 # Append it to the current list container.
                 container.append(self.convert(event, value))
@@ -547,7 +600,9 @@ class Parser:
                 key = self.convert(event, value)
             elif (event == Events.OBJECT_VALUE_STRING
                   or event == Events.OBJECT_VALUE_NUMBER
-                  or event == Events.OBJECT_VALUE_NULL):
+                  or event == Events.OBJECT_VALUE_NULL
+                  or event == Events.OBJECT_VALUE_TRUE
+                  or event == Events.OBJECT_VALUE_FALSE):
                 # We just parsed an object value.
                 # Use the last-parsed object key to create an item in the
                 # current object container.
@@ -555,3 +610,26 @@ class Parser:
 
         # Return the mutated root object.
         return root
+
+
+if __name__ == '__main__':
+    import argparse
+    from pprint import pprint
+
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('input_file', type=argparse.FileType('rb'))
+    arg_parser.add_argument('--action', choices=('load', 'parse'),
+                            default="load")
+    args = arg_parser.parse_args()
+
+    parser = Parser(args.input_file)
+
+    if args.action == 'load':
+        pprint(parser.load())
+
+    elif args.action == 'parse':
+        for event_value in parser.parse():
+            event, value = split_event_value(event_value)
+            if value is not None:
+                value = parser.convert(event, value)
+            print(event, value)

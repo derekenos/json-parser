@@ -67,6 +67,12 @@ def test_negative_float():
 def test_null():
     _assertEqual(parse(b'null'), ['NULL'])
 
+def test_true():
+    _assertEqual(parse(b'true'), ['TRUE'])
+
+def test_false():
+    _assertEqual(parse(b'false'), ['FALSE'])
+
 
 ###############################################################################
 # Test invalid scalar values
@@ -156,6 +162,12 @@ def test_negative_float_conversion():
 
 def test_null_conversion():
     _assertEqual(Parser.convert(None, 'NULL', None), None)
+
+def test_true_conversion():
+    _assertEqual(Parser.convert(None, 'TRUE', None), True)
+
+def test_false_conversion():
+    _assertEqual(Parser.convert(None, 'FALSE', None), False)
 
 
 ###############################################################################
