@@ -2,7 +2,7 @@
 class UnexpectedCharacter(Exception):
     def __init__(self, c, i):
         super().__init__(
-            b'Unexpected character "{}" at position {}'.format(c, i)
+            'Unexpected character "{}" at position {}'.format(c, i)
         )
 
 OBJECT_OPEN = b'{'
@@ -234,7 +234,7 @@ class Parser:
         # Convert a parsed value to a Python type.
         if _type.endswith('NULL'):
             return None
-        if _type.endswith('STRING'):
+        if _type.endswith('STRING') or _type == 'OBJECT_KEY':
             return b''.join(value)
         if _type.endswith('NUMBER'):
             return float(b''.join(value))
@@ -288,6 +288,66 @@ class Parser:
             # Abort if all of the requested paths have been yielded.
             if len(unyielded_path_idxs) == 0:
                 return
+
+    def load(self):
+        parse_gen = self.parse()
+        # Initialize the value based on the first read.
+        type_value = next(parse_gen)
+        _type, value = (type_value if isinstance(type_value, tuple)
+                        else (type_value, None))
+        # If it's a single scalar value, convert and return it.
+        if _type == 'STRING' or _type == 'NUMBER' or _type == 'NULL':
+            return self.convert(_type, value)
+
+        # Read the initial container type.
+        if _type == 'OBJECT_OPEN':
+            root = {}
+        elif _type == 'ARRAY_OPEN':
+            root = []
+        else:
+            raise NotImplementedError(_type)
+
+        # Continue parsing.
+        container_stack = []
+        container = root
+        key = None
+
+        def open_container(_container):
+            nonlocal container
+            # Attach the new container to the one that's currently open.
+            if type(container) is list:
+                container.append(_container)
+            else:
+                container[key] = _container
+            # Push the currently-open container onto the stack.
+            container_stack.append(container)
+            # Set the new container as the current.
+            container = _container
+
+        def close_container():
+            nonlocal container
+            container = container_stack.pop()
+
+        for type_value in parse_gen:
+            _type, value = (type_value if isinstance(type_value, tuple)
+                            else (type_value, None))
+            if _type == 'ARRAY_OPEN':
+                open_container([])
+            elif _type == 'OBJECT_OPEN':
+                open_container({})
+            elif _type == 'ARRAY_CLOSE' or _type == 'OBJECT_CLOSE':
+                if len(container_stack) == 0:
+                    # No more open containers, so stop parsing.
+                    break
+                close_container()
+            elif _type.startswith('ARRAY_VALUE_'):
+                container.append(self.convert(_type, value))
+            elif _type == 'OBJECT_KEY':
+                key = self.convert(_type, value)
+            elif _type.startswith('OBJECT_VALUE_'):
+                container[key] = self.convert(_type, value)
+
+        return root
 
 # TEST
 if __name__ == '__main__':
