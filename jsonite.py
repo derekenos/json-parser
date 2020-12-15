@@ -155,36 +155,52 @@ class Parser:
     def parse(self):
         self.expect_stack = [ Matchers.EOF, Matchers.IS_VALUE_START ]
         while True:
-            for x in self.parse_next():
-                if x is None:
+            for event_value in self.parse_next():
+                if event_value is None:
                     return
-                yield x
+                yield event_value
 
     def parse_next(self):
         c, match = self.expect(self.expect_stack.pop())
 
         if match == Matchers.EOF:
+            # Char is an empty string which indicates that the input stream has
+            # been exhausted.
+            # Yield None to indicate that end-of-file has been reached.
             yield None
             return
 
         if match == Matchers.OBJECT_CLOSE:
+            # Char is an object terminator (i.e. '}').
             yield Events.OBJECT_CLOSE
+            # No context here for knowing what, if anything, should follow.
+            return
+
+        if match == Matchers.ARRAY_CLOSE:
+            # Char is an array terminator (i.e. ']')
+            yield Events.ARRAY_CLOSE
+            # No context here for knowing what, if anything, should follow.
             return
 
         if match == Matchers.OBJECT_KEY_START:
+            # Char is the expected object key's opening double-qoute.
+            # Yield the object key string.
             yield from self.with_drain(Events.OBJECT_KEY, self.parse_string())
+            # Expect a object key/value separator (i.e. ':') to follow.
             self.expect_stack.append(Matchers.KV_SEP)
             return
 
         if match == Matchers.KV_SEP:
+            # Char is an object key / value separator (i.e. ':')
+            # Expect an object value (e.g. string, number, null) to follow.
             self.expect_stack.append(Matchers.IS_OBJECT_VALUE_START)
             return
 
-        if match == Matchers.ARRAY_CLOSE:
-            yield Events.ARRAY_CLOSE
-            return
-
         if match == Matchers.IS_NEXT_OBJECT_KEY_START:
+            # Char is an item separator (i.e. ',') in a post-object-value
+            # context.
+            # Expect an object value, item separator (thus accomodating
+            # unlimited trailing commas), or object terminator to follow.
             self.expect_stack.append(
                 (
                     Matchers.OBJECT_KEY_START,
@@ -197,6 +213,10 @@ class Parser:
             return
 
         if match == Matchers.IS_NEXT_ARRAY_VALUE_START:
+            # Char is an item separator (i.e. ',') in a post-array-value
+            # context.
+            # Expect an array value, item separator (thus accomodating
+            # unlimited trailing commas), or array terminator to follow.
             self.expect_stack.append(
                 (
                     Matchers.IS_ARRAY_VALUE_START,
@@ -208,7 +228,9 @@ class Parser:
             )
             return
 
-        # Assert that this is some sort of value match.
+        # Having exhausted the above clauses, we find ourselves dealing with a
+        # new value, either as a scalar or in the context of an array or object
+        # value. Assert that this is so.
         if match not in (
                 Matchers.IS_VALUE_START,
                 Matchers.IS_OBJECT_VALUE_START,
@@ -217,7 +239,10 @@ class Parser:
             raise AssertionError(c, match, self.char_num)
 
         if c == Matchers.OBJECT_OPEN:
+            # Char is an object initiator (i.e. '{')
             yield Events.OBJECT_OPEN
+            # Expect an object key, item separator, or object terminator to
+            # follow.
             self.expect_stack.append(
                 (
                     Matchers.OBJECT_KEY_START,
@@ -230,6 +255,9 @@ class Parser:
             return
 
         if c == Matchers.ARRAY_OPEN:
+            # Char is an array initiator (i.e. '[')
+            # Expect an array value, item separator, or array terminator to
+            # follow.
             yield Events.ARRAY_OPEN
             self.expect_stack.append(
                 (
@@ -243,6 +271,8 @@ class Parser:
             return
 
         if c == Matchers.STRING_START:
+            # Char is a string initiator (i.e. '"')
+            # Yield the event along with a string value parser/generator.
             if match == Matchers.IS_OBJECT_VALUE_START:
                 event = Events.OBJECT_VALUE_STRING
             elif match == Matchers.IS_ARRAY_VALUE_START:
@@ -252,6 +282,8 @@ class Parser:
             yield from self.with_drain(event, self.parse_string())
 
         elif Matchers.IS_NUMBER_START(c):
+            # Char is a number initiator (i.e. '-' or a digit)
+            # Yield the event along with a number value parser/generator.
             if match == Matchers.IS_OBJECT_VALUE_START:
                 event = Events.OBJECT_VALUE_NUMBER
             elif match == Matchers.IS_ARRAY_VALUE_START:
@@ -261,6 +293,8 @@ class Parser:
             yield from self.with_drain(event, self.parse_number(c))
 
         elif c == Matchers.NULL_START:
+            # Char is a null initiator (i.e. 'n')
+            # Expect the next 3 chars to be 'ull' and yield the event.
             self.expect(b'u')
             self.expect(b'l')
             self.expect(b'l')
@@ -275,10 +309,16 @@ class Parser:
             raise NotImplementedError(c)
 
         if match == Matchers.IS_ARRAY_VALUE_START:
+            # We just yielded an array value.
+            # Expect either an array item separator or array terminator to
+            # follow.
             self.expect_stack.append(
                 (Matchers.IS_NEXT_ARRAY_VALUE_START, self.expect_stack.pop())
             )
         elif match == Matchers.IS_OBJECT_VALUE_START:
+            # We just yielded an object value.
+            # Expect either an object item separator or object terminator to
+            # follow.
             self.expect_stack.append(
                 (Matchers.IS_NEXT_OBJECT_KEY_START, self.expect_stack.pop())
             )
