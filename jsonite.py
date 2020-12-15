@@ -245,6 +245,9 @@ class Parser:
         # that exist in the data.
         # paths must be an iterable of lists having the format:
         #   [ <object-key-or-array-index>, ... ]
+        #
+        # Track the indexes of the paths in paths to be yielded.
+        unyielded_path_idxs = set(range(len(paths)))
         path = []
         for type_value in self.parse():
             if isinstance(type_value, tuple):
@@ -271,11 +274,20 @@ class Parser:
                 path[-1] = b''.join(value)
             elif _type.startswith('ARRAY_VALUE_'):
                 path[-1] += 1
-                if path in paths:
-                    yield path, self.convert(_type, value)
+                for i in unyielded_path_idxs:
+                    if path == paths[i]:
+                        yield path, self.convert(_type, value)
+                        unyielded_path_idxs.remove(i)
+                        break
             elif _type.startswith('OBJECT_VALUE_'):
-                if path in paths:
-                    yield path, self.convert(_type, value)
+                for i in unyielded_path_idxs:
+                    if path == paths[i]:
+                        yield path, self.convert(_type, value)
+                        unyielded_path_idxs.remove(i)
+                        break
+            # Abort if all of the requested paths have been yielded.
+            if len(unyielded_path_idxs) == 0:
+                return
 
 # TEST
 if __name__ == '__main__':
