@@ -1,5 +1,6 @@
 
 from io import BytesIO
+from sys import stdout
 
 from jsonite import (
     Parser,
@@ -141,5 +142,4 @@ def run_tests():
                 stdout.flush()
 
 if __name__ == '__main__':
-    from sys import stdout
     run_tests()
