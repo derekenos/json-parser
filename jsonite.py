@@ -68,9 +68,8 @@ class Events:
 # Helpers
 ###############################################################################
 
+is_digit = lambda c: c.isdigit()
 is_not_string_terminator = lambda c: c != Matchers.STRING_TERMINATOR
-is_number_char = lambda c: c.isdigit() or c == b'.'
-
 
 ###############################################################################
 # Parser
@@ -79,24 +78,30 @@ is_number_char = lambda c: c.isdigit() or c == b'.'
 class Parser:
     def __init__(self, stream):
         self.stream = stream
+        # Store the current stream char number for reporting the position of
+        # unexpected characters.
         self.char_num = 0
+        # Store a place to stuff a character that we read from the stream but
+        # need to put back for the next read. next_char() will pop this value
+        # before reading again from the stream, thus providing a sort of 1-byte
+        # lookahead mechanism.
         self.stuffed_char = None
 
     def next_char(self):
-        # If there's a stuffed nonspace char, return that.
+        # If there's a stuffed nonspace char, return that and do not increment
+        # char_num.
         if self.stuffed_char is not None:
             c = self.stuffed_char
             self.stuffed_char = None
             return c
-        # Return the next byte from the stream.
+        # Return the next byte from the stream and increment char_num.
         c = self.stream.read(1)
-        # Increment the char counter.
         self.char_num += 1
         return c
 
     def next_nonspace_char(self):
         # Advance the stream past the next non-whitespace character and return
-        # the character, or None if the stream has been exhausted.
+        # the character, or Matchers.EOF if the stream has been exhausted.
         while True:
             c = self.next_char()
             if c == Matchers.EOF:
@@ -105,52 +110,92 @@ class Parser:
                 return c
 
     def stuff_char(self, c):
+        # Assert that stuffed_char is empty and write the character to it.
         if self.stuffed_char is not None:
             raise AssertionError
         self.stuffed_char = c
 
     def expect(self, matcher):
-        # Assert that the next non-whitespace char is as expected and return
-        # it.
+        # Assert that the next non-whitespace charater is as expected and
+        # return both the character and the matcher that matched it.
         c = self.next_nonspace_char()
+        # The expect_stack contains elements that are either a single matcher
+        # or a tuple of matches in the format:
+        #  ( <optional-matcher>, <mandatory-matcher> )
+        # Iterate through all tuple-type matchers.
         while isinstance(matcher, tuple):
             optional, matcher = matcher
+            # If the matcher doesn't look like a string (i.e. no 'decode'),
+            # assume it's a function and call it, other test again the string.
             if ((not hasattr(optional, 'decode') and optional(c))
                 or c == optional):
+                # An optional matcher matched, so push the mandatory one back
+                # onto the expect_stack.
                 self.expect_stack.append(matcher)
+                # Return the character and matched optional matcher.
                 return c, optional
+        # Either no optional matches were specified or none matched, so attempt
+        # to match against the mandatory matcher.
         if (not hasattr(matcher, 'decode') and matcher(c)) or c == matcher:
+            # Return the character and matched mandatory matcher.
             return c, matcher
+        # The mandatory matcher failed, so raise UnexpectedCharacter.
         raise UnexpectedCharacter(c, self.char_num)
 
     def yield_while(self, pred):
-        escaped = 0
+        # Yield characters from the stream until testing them against the
+        # specified predicate function returns False.
         while True:
+            # Read the next character from the stream.
             c = self.next_char()
-            if c == b'\\':
-                escaped ^= 1
-            elif escaped == 0 and not pred(c):
+            # Check whether the character satisfies the predicate.
+            if not pred(c):
+                # The predicate has not been satisfied so stuff the last-read
+                # character back and return.
                 self.stuff_char(c)
                 return
+            # Yield the character.
             yield c
 
     def with_drain(self, event, gen):
-        # Yield the specified (event, gen) pair and afterward, if gen is an
-        # unconsumed generator, drain it.
+        # Yield the specified (event, gen) pair and afterward, if necessary,
+        # consume the generator to ensure that the stream read pointer is
+        # advanced as expected.
+        # Read the current char_num for later comparison to determine whether
+        # any data was consumed from the generator.
         char_num = self.char_num
         yield event, gen
         if self.char_num == char_num and gen is not None:
-            # The generator was not consumed, so drain it.
+            # char_num has not been incremented and gen is a generator, so
+            # consume it.
             for _ in gen:
                 pass
 
     def parse_string(self):
+        # Yield characters from the stream up until the next string terminator
+        # (i.e. '"') character.
         yield from self.yield_while(is_not_string_terminator)
+        # Expect a string terminator to follow.
         self.expect(Matchers.STRING_TERMINATOR)
 
-    def parse_number(self, first_char):
-        yield first_char
-        yield from self.yield_while(is_number_char)
+    def parse_number(self):
+        # Yield characters from the stream up until the next non-number char.
+        # Expect the first character to be a negative sign or digit.
+        yield self.expect(lambda c: c == b'-' or c.isdigit())[0]
+        # Expect one or more digits.
+        yield from self.yield_while(is_digit)
+        # Check to see if the next char is a decimal point.
+        c = self.next_char()
+        if c != b'.':
+            # Not a decimal point so stuff it back and return.
+            self.stuff_char(c)
+            return
+        # It is a decimal point.
+        yield c
+        # Expect the next character to be a digit.
+        yield self.expect(is_digit)[0]
+        # Yield any remaining digits.
+        yield from self.yield_while(is_digit)
 
     def parse(self):
         self.expect_stack = [ Matchers.EOF, Matchers.IS_VALUE_START ]
@@ -290,7 +335,10 @@ class Parser:
                 event = Events.ARRAY_VALUE_NUMBER
             else:
                 event = Events.NUMBER
-            yield from self.with_drain(event, self.parse_number(c))
+            # parse_number() is going to need this first character, so stuff it
+            # back in.
+            self.stuff_char(c)
+            yield from self.with_drain(event, self.parse_number())
 
         elif c == Matchers.NULL_START:
             # Char is a null initiator (i.e. 'n')

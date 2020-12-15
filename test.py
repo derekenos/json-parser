@@ -67,6 +67,15 @@ def test_negative_float():
 def test_null():
     _assertEqual(parse(b'null'), ['NULL'])
 
+
+###############################################################################
+# Test invalid scalar values
+###############################################################################
+
+def test_number_containing_multiple_numeric_chars():
+    _assertRaises(UnexpectedCharacter, parse, b'-3.14.-1-5')
+
+
 ###############################################################################
 # Test empty containers
 ###############################################################################
@@ -156,10 +165,6 @@ def test_null_conversion():
 def test_object_key_containing_double_quote():
     raise Skip
     parse(b'{"a_\\"good\\"_key": 0}')
-
-def test_number_containing_multiple_decimal_points():
-    raise Skip
-    _assertRaises(UnexpectedCharacter, parse, b'3.14.15')
 
 ###############################################################################
 
