@@ -11,8 +11,11 @@ class UnexpectedCharacter(Exception):
 
 ###############################################################################
 # Matchers
+#
+# Matchers are character strings or predicate functions that are used to both
+# test whether a character is as expected and serve as an indicator of to which
+# class a character belongs.
 ###############################################################################
-
 class Matchers:
     OBJECT_OPEN = b'{'
     ARRAY_OPEN = b'['
@@ -25,7 +28,6 @@ class Matchers:
     KV_SEP = b':'
     ITEM_SEP = b','
     EOF = b''
-    IS_NO_MATCH = lambda c: False
 
 # Set derived matchers.
 Matchers.OBJECT_KEY_START = Matchers.STRING_START
@@ -45,6 +47,9 @@ Matchers.IS_NEXT_ARRAY_VALUE_START = \
 
 ###############################################################################
 # Events
+#
+# Events represent things that we expect to encounter, and want to act in
+# response to, while parsing a JSON string.
 ###############################################################################
 
 class Events:
@@ -70,6 +75,7 @@ class Events:
 
 is_digit = lambda c: c.isdigit()
 is_not_string_terminator = lambda c: c != Matchers.STRING_TERMINATOR
+split_event_value = lambda x: (x if isinstance(x, tuple) else (x, None))
 
 ###############################################################################
 # Parser
@@ -391,45 +397,66 @@ class Parser:
     def yield_paths(self, paths):
         # Yield ( <path>, <value-generator> ) tuples for all specified paths
         # that exist in the data.
-        # paths must be an iterable of lists having the format:
-        #   [ <object-key-or-array-index>, ... ]
         #
-        # Track the indexes of the paths in paths to be yielded.
+        # paths must be an iterable of lists of byte strings and integers in
+        # the format:
+        #   [ b'<object-key>', <array-index>, ... ]
+        # Example:
+        #   [ b'people', 0, b'first_name' ]
+        #
+        # Track the indexes of the paths in paths to be yielded so that we can
+        # abort as soon as all requested paths have been yielded.
         unyielded_path_idxs = set(range(len(paths)))
+        # Define the current path stack.
         path = []
         for event_value in self.parse():
-            if isinstance(event_value, tuple):
-                event, value = event_value
-            else:
-                event, value  = event_value, None
-
+            event, value = split_event_value(event_value)
             if event == Events.OBJECT_OPEN:
+                # An object has opened.
+                # If the current path node is an array index, increment it.
                 if path and isinstance(path[-1], int):
                     path[-1] += 1
+                # Append an empty object indicator to the current path, to be
+                # overwritten by the next parsed key.
                 path.append(b'.')
                 continue
 
             elif event == Events.OBJECT_CLOSE:
+                # The object has closed.
+                # Pop it from the current path.
                 path.pop()
                 continue
 
             elif event == Events.ARRAY_OPEN:
+                # An array has opened.
+                # If the current path node is an array index, increment it.
                 if path and isinstance(path[-1], int):
                     path[-1] += 1
+                # Append an array index of -1 to the current path, to be
+                # increment on the next parsed array value.
                 path.append(-1)
                 continue
 
             elif event == Events.ARRAY_CLOSE:
+                # The array has closed.
+                # Pop it from the current path.
                 path.pop()
                 continue
 
             elif event == Events.OBJECT_KEY:
-                path[-1] = b''.join(value)
+                # We parsed an object key.
+                # Overwrite the current path node with the key value.
+                path[-1] = self.convert(Events.OBJECT_KEY, value)
 
             elif (event == Events.ARRAY_VALUE_STRING
                   or event == Events.ARRAY_VALUE_NUMBER
                   or event == Events.ARRAY_VALUE_NULL):
+                # We parsed an array value.
+                # Increment the current path node array index.
                 path[-1] += 1
+                # For each unyielded path, attempt to match it against the
+                # current path. If it matches, yield the event and remove the
+                # path index from the unyielded set.
                 for i in unyielded_path_idxs:
                     if path == paths[i]:
                         yield path, self.convert(event, value)
@@ -439,6 +466,10 @@ class Parser:
             elif (event == Events.OBJECT_VALUE_STRING
                   or event == Events.OBJECT_VALUE_NUMBER
                   or event == Events.OBJECT_VALUE_NULL):
+                # We parsed an object value.
+                # For each unyielded path, attempt to match it against the
+                # current path. If it matches, yield the event and remove the
+                # path index from the unyielded set.
                 for i in unyielded_path_idxs:
                     if path == paths[i]:
                         yield path, self.convert(event, value)
@@ -450,18 +481,18 @@ class Parser:
                 return
 
     def load(self):
+        # Parse the entire stream and return a single Python object, similar
+        # to the built-in json.load() / json.loads() behavior.
         parse_gen = self.parse()
         # Initialize the value based on the first read.
-        event_value = next(parse_gen)
-        event, value = (event_value if isinstance(event_value, tuple)
-                        else (event_value, None))
+        event, value = split_event_value(next(parse_gen))
         # If it's a single scalar value, convert and return it.
         if (event == Events.STRING
             or event == Events.NUMBER
             or event == Events.NULL):
             return self.convert(event, value)
 
-        # Read the initial container type.
+        # Create an initial, root object to represent the initial container.
         if event == Events.OBJECT_OPEN:
             root = {}
         elif event == Events.ARRAY_OPEN:
@@ -469,9 +500,12 @@ class Parser:
         else:
             raise NotImplementedError(event)
 
-        # Continue parsing.
+        # Create a stack to store the hierarchy of open container objects.
         container_stack = []
+        # Define the current container object. Building the final object will
+        # entail in-place mutation of whatever object 'container' points to.
         container = root
+        # Define a place to store the last-parsed object key.
         key = None
 
         def open_container(_container):
@@ -487,30 +521,42 @@ class Parser:
             container = _container
 
         def close_container():
+            # Close the current container object and reopen the last one.
             nonlocal container
             container = container_stack.pop()
 
+        # Start parsing.
         for event_value in parse_gen:
-            event, value = (event_value if isinstance(event_value, tuple)
-                            else (event_value, None))
+            event, value = split_event_value(event_value)
             if event == Events.ARRAY_OPEN:
+                # An array just opened so open a new list container.
                 open_container([])
             elif event == Events.OBJECT_OPEN:
+                # An array just opened so open a new object container.
                 open_container({})
             elif event == Events.ARRAY_CLOSE or event == Events.OBJECT_CLOSE:
+                # The current array or object container just closed.
+                # If there are no open containers, stop parsing.
                 if len(container_stack) == 0:
-                    # No more open containers, so stop parsing.
                     break
+                # Close the current container and reopen the last one.
                 close_container()
             elif (event == Events.ARRAY_VALUE_STRING
                   or event == Events.ARRAY_VALUE_NUMBER
                   or event == Events.ARRAY_VALUE_NULL):
+                # We just parsed an array value.
+                # Append it to the current list container.
                 container.append(self.convert(event, value))
             elif event == Events.OBJECT_KEY:
+                # We just parsed an object key. Record it.
                 key = self.convert(event, value)
             elif (event == Events.OBJECT_VALUE_STRING
                   or event == Events.OBJECT_VALUE_NUMBER
                   or event == Events.OBJECT_VALUE_NULL):
+                # We just parsed an object value.
+                # Use the last-parsed object key to create an item in the
+                # current object container.
                 container[key] = self.convert(event, value)
 
+        # Return the mutated root object.
         return root

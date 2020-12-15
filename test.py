@@ -159,6 +159,23 @@ def test_null_conversion():
 
 
 ###############################################################################
+# Test yield paths
+###############################################################################
+
+def test_yield_paths():
+    fh = open('test_data/api_weather_gov_points.json', 'rb')
+    parser = Parser(fh)
+    path = [
+        b'properties',
+        b'relativeLocation',
+        b'geometry',
+        b'coordinates',
+        1
+    ]
+    _assertEqual(list(parser.yield_paths((path,))), [(path, 41.50324)])
+
+
+###############################################################################
 # Test things you know are broken
 ###############################################################################
 
