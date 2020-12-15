@@ -1,8 +1,17 @@
 
 from io import BytesIO
 
-from jsonite import Parser
+from jsonite import (
+    Parser,
+    UnexpectedCharacter,
+)
 
+###############################################################################
+# Testing helpers
+###############################################################################
+
+class Skip(Exception): pass
+class DidNotRaise(Exception): pass
 
 def _assertEqual(result, expected):
     if result != expected:
@@ -10,7 +19,18 @@ def _assertEqual(result, expected):
             f'Expected ({repr(expected)}), got ({repr(result)})'
         )
 
-# Define a parsing helper that automatically consumes the generators.
+def _assertRaises(exc, fn, *args, **kwargs):
+    try:
+        fn(*args, **kwargs)
+    except exc:
+        pass
+    else:
+        raise DidNotRaise
+
+###############################################################################
+# Parsing helper
+###############################################################################
+
 def parse(b):
     parser = Parser(BytesIO(b))
     result = []
@@ -87,6 +107,18 @@ def test_null_conversion():
 
 
 ###############################################################################
+# Test things you know are broken
+###############################################################################
+
+def test_object_key_containing_double_quote():
+    raise Skip
+    parse(b'{"a_\\"good\\"_key": 0}')
+
+def test_number_containing_multiple_decimal_points():
+    raise Skip
+    _assertRaises(UnexpectedCharacter, parse, b'3.14.15')
+
+###############################################################################
 
 def run_tests():
     # Run all global functions with a name that starts with "test_".
@@ -101,6 +133,8 @@ def run_tests():
             except AssertionError as e:
                 stdout.write(' - FAILED\n')
                 raise
+            except Skip:
+                stdout.write(' - SKIPPED\n')
             else:
                 stdout.write(' - ok\n')
             finally:
