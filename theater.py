@@ -1,11 +1,18 @@
 
+from io import BytesIO
 from json import dumps
+from time import sleep
+from types import MethodType
+from urllib import request
 from http.server import (
     HTTPServer,
     BaseHTTPRequestHandler,
 )
 
-from jsonite import Parser
+from jsonite import (
+    Parser,
+    split_event_value,
+)
 
 INDEX_HTML_PATH = 'theater/index.html'
 
@@ -15,8 +22,48 @@ def get_send(socket):
         socket.write(data)
     return send
 
+
+def fetch_data(url):
+    res = request.urlopen(url)
+    if res.status != 200:
+        raise Exception(f'response status ({res.status}) != 200')
+    return BytesIO(res.read())
+
 def player(send, url):
-    send('LOADING', url)
+    # Attempt to fetch the data.
+    send('MESSAGE', f'Fetching: {url}')
+    try:
+        data = fetch_data(url)
+    except Exception as e:
+        send('ERROR', str(e))
+        return
+
+    # Instantiate the parser.
+    send('MESSAGE', 'Instantiating jsonite.Parser')
+    parser = Parser(data)
+
+    # Hijack Parser.next_char() to send each char.
+    old_next_char = parser.next_char
+    def next_char(self):
+        c = old_next_char()
+        send('NEXT_CHAR', c.decode('utf-8'))
+        return c
+    parser.next_char = MethodType(next_char, parser)
+
+    try:
+        for event_value in parser.parse():
+            event, value = split_event_value(event_value)
+            if value is None:
+                send('PARSE', event)
+            else:
+                value = parser.convert(event, value)
+                if isinstance(value, bytes):
+                    value = value.decode('utf-8')
+                send('PARSE', [event, value])
+            sleep(0.25)
+    except Exception as e:
+        send('ERROR', str(e))
+
 
 class RequestHandler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'

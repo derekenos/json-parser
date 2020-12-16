@@ -6,6 +6,8 @@
 
     <script>
 
+     const noop = () => null
+
      function loadingEventHandler (url) {
        console.debug(`loading event handler called with: ${url}`)
      }
@@ -18,13 +20,27 @@
        el.scrollTop = el.scrollHeight - el.clientHeight;
      }
 
+     function nextCharEventHandler(char) {
+       // Append the char to the data display area.
+       const el = document.getElementById("data")
+       el.value += char
+       // Scroll to the bottom.
+       el.scrollTop = el.scrollHeight - el.clientHeight;
+     }
+
      const EVENT_HANDLERS = new Map([
-       ["LOADING", loadingEventHandler]
+       ["MESSAGE", noop],
+       ["ERROR", noop],
+       ["LOADING", loadingEventHandler],
+       ["NEXT_CHAR", nextCharEventHandler],
+       ["PARSE", noop],
      ])
 
      function playEventHandler (msg) {
        const [ event, payload ] = JSON.parse(msg.data)
-       showEventInStream(event, payload)
+       if (event !== "NEXT_CHAR") {
+         showEventInStream(event, payload)
+       }
        if (!EVENT_HANDLERS.has(event)) {
          console.error(`No event handler defined for ${event}`)
          return
@@ -94,10 +110,17 @@
 
      #event-stream {
        width: 100%;
-       height: 4rem;
+       height: 16rem;
        margin: 0;
        padding-bottom: 1rem;
 
+     }
+
+     #data {
+       width: 100%;
+       height: 16rem;
+       margin: 0;
+       padding-bottom: 1rem;
      }
     </style>
   </head>
@@ -111,7 +134,7 @@
     </div>
     <h1>Event Stream</h1>
     <textarea id="event-stream"></textarea>
-
+    <textarea id="data"></textarea>
   </body>
 
 </html>
