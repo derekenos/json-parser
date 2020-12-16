@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+
+    <script>
+
+     function loadingEventHandler (url) {
+       console.debug(`loading event handler called with: ${url}`)
+     }
+
+     function showEventInStream (event, payload) {
+       // Display the event in the event-stream textarea.
+       const el = document.getElementById("event-stream")
+       el.value += `\n[${Date.now()}] ${event} ${JSON.stringify(payload)}`
+       // Scroll to the bottom.
+       el.scrollTop = el.scrollHeight - el.clientHeight;
+     }
+
+     const EVENT_HANDLERS = new Map([
+       ["LOADING", loadingEventHandler]
+     ])
+
+     function playEventHandler (msg) {
+       const [ event, payload ] = JSON.parse(msg.data)
+       showEventInStream(event, payload)
+       if (!EVENT_HANDLERS.has(event)) {
+         console.error(`No event handler defined for ${event}`)
+         return
+       }
+       // Invoke the event handler with the payload.
+       EVENT_HANDLERS.get(event)(payload)
+     }
+
+      function init () {
+        const urlInput = document.getElementById("url")
+
+        // Add URL keydown handler.
+        urlInput.addEventListener("keydown", e => {
+          if (e.key === "Enter") {
+            window.location.pathname = `/${e.target.value}`
+          }
+        })
+
+        // Attempt to parse the URL from pathname.
+        const url = window.location.pathname.slice(1)
+        if (url.length === 0) {
+          return
+        }
+        // Check that url looks like a URL.
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          console.warn(`The specified URL is not valid: ${url}`)
+          return
+        }
+        // Set the URL input value.
+        urlInput.value = url
+        // Init the event stream.
+        new EventSource(`/play/${url}`).onmessage = playEventHandler
+      }
+      document.addEventListener("DOMContentLoaded", () => init())
+    </script>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: arial;
+      }
+
+     h1 {
+       width: 100%;
+       background-color: #888;
+       color: #fff;
+       margin: 0;
+       padding: 0.2rem 1rem;
+       font-size: 1.2rem;
+     }
+
+      #top-bar {
+        padding: 1rem;
+        background-color: #222266;
+        color: #fff;
+        font-variant: small-caps;
+        font-weight: bold;
+        letter-spacing: 0.1rem;
+      }
+
+      #url {
+        width: 50%;
+        border-radius: 8px;
+        padding: 0.5rem;
+      }
+
+     #event-stream {
+       width: 100%;
+       height: 4rem;
+       margin: 0;
+       padding-bottom: 1rem;
+
+     }
+    </style>
+  </head>
+
+  <body>
+    <div id="top-bar">
+      <label for="url">url</label>
+      <input id="url" type="text" name="url"
+             placeholder="Enter the URL of some JSON data and hit ENTER"
+             size="64">
+    </div>
+    <h1>Event Stream</h1>
+    <textarea id="event-stream"></textarea>
+
+  </body>
+
+</html>
