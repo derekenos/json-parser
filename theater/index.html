@@ -28,12 +28,34 @@
        el.scrollTop = el.scrollHeight - el.clientHeight;
      }
 
+     function translateMatcher(matcher) {
+       if (matcher.length === 1) {
+         return matcher === "" ? "END_OF_FILE" : `"${matcher}"`
+       } else {
+         // Trim the "IS_" prefix.
+         return matcher.slice(3)
+       }
+     }
+
+     function expectStackEventHandler(expect_stack) {
+       // Updated the parser-expects element.
+       const el = document.getElementById("parser-expects")
+       const matcher = expect_stack[expect_stack.length - 1]
+
+       if (typeof matcher === "string") {
+         el.textContent = translateMatcher(matcher)
+       } else {
+         el.textContent = `${translateMatcher(matcher[0])} or ${translateMatcher(matcher[1])}`
+       }
+     }
+
      const EVENT_HANDLERS = new Map([
        ["MESSAGE", noop],
        ["ERROR", noop],
        ["LOADING", loadingEventHandler],
        ["NEXT_CHAR", nextCharEventHandler],
        ["PARSE", noop],
+       ["EXPECT_STACK", expectStackEventHandler],
      ])
 
      function playEventHandler (msg) {
@@ -84,13 +106,28 @@
         font-family: arial;
       }
 
-     h1 {
+     h1, h2 {
        width: 100%;
-       background-color: #888;
        color: #fff;
-       margin: 0;
        padding: 0.2rem 1rem;
        font-size: 1.2rem;
+     }
+
+     h1 {
+       margin: 0;
+       background-color: #888;
+     }
+
+     h2 {
+       margin: 0.2rem 0;
+       background-color: #555599;
+     }
+
+     textarea {
+       border: none;
+       width: 100%;
+       margin: 0;
+       padding-bottom: 1rem;
      }
 
       #top-bar {
@@ -109,18 +146,18 @@
       }
 
      #event-stream {
-       width: 100%;
        height: 16rem;
-       margin: 0;
-       padding-bottom: 1rem;
 
      }
 
+     #parser-expects {
+       font-size: .9rem;
+       margin-left: 1rem;
+       letter-spacing: .2rem;
+     }
+
      #data {
-       width: 100%;
        height: 16rem;
-       margin: 0;
-       padding-bottom: 1rem;
      }
     </style>
   </head>
@@ -134,6 +171,8 @@
     </div>
     <h1>Event Stream</h1>
     <textarea id="event-stream"></textarea>
+    <h2>Parser Expects: <span id="parser-expects"></span></h2>
+    <h1>Read Progress</h1>
     <textarea id="data"></textarea>
   </body>
 

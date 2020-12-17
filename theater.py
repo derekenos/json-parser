@@ -2,7 +2,7 @@
 from io import BytesIO
 from json import dumps
 from time import sleep
-from types import MethodType
+from types import FunctionType
 from urllib import request
 from http.server import (
     HTTPServer,
@@ -10,18 +10,65 @@ from http.server import (
 )
 
 from jsonite import (
+    Matchers,
     Parser,
     split_event_value,
 )
 
 INDEX_HTML_PATH = 'theater/index.html'
 
+class InstrumentedExpectStack(list):
+    def __init__(self, old_expect_stack, send):
+        super().__init__(old_expect_stack)
+        self.send = send
+
+    def append(self, v):
+        super().append(v)
+        self.send('EXPECT_STACK', self.to_payload())
+
+    def pop(self):
+        v = super().pop()
+        self.send('EXPECT_STACK', self.to_payload())
+        return v
+
+    def decode_matcher(self, matcher):
+        if not isinstance(matcher, FunctionType):
+            # Matcher is a byte string.
+            return matcher.decode('utf-8')
+        # Matcher is a function.
+        for k, v in Matchers.__dict__.items():
+            if matcher == v:
+                return k
+        raise AssertionError
+
+    def convert_expect_value(self, v):
+        if not isinstance(v, tuple):
+            return self.decode_matcher(v)
+        return (self.decode_matcher(v[0]), self.convert_expect_value(v[1]))
+
+    def to_payload(self):
+        return list(map(self.convert_expect_value, self))
+
+class InstrumentedParser(Parser):
+    def __init__(self, stream, send):
+        super().__init__(stream)
+        self.send = send
+        self.expect_stack = InstrumentedExpectStack(self.expect_stack, send)
+
+    def next_char(self):
+        # Check wether any character is stuff, cause we already send'd it.
+        any_stuffed = self.stuffed_char is not None
+        c = super().next_char()
+        if not any_stuffed:
+            self.send('NEXT_CHAR', c.decode('utf-8'))
+            sleep(0.1)
+        return c
+
 def get_send(socket):
     def send (event, payload=None):
         data = bytes(f'data: {dumps([event, payload])}\n\n', encoding='utf-8')
         socket.write(data)
     return send
-
 
 def fetch_data(url):
     res = request.urlopen(url)
@@ -40,15 +87,7 @@ def player(send, url):
 
     # Instantiate the parser.
     send('MESSAGE', 'Instantiating jsonite.Parser')
-    parser = Parser(data)
-
-    # Hijack Parser.next_char() to send each char.
-    old_next_char = parser.next_char
-    def next_char(self):
-        c = old_next_char()
-        send('NEXT_CHAR', c.decode('utf-8'))
-        return c
-    parser.next_char = MethodType(next_char, parser)
+    parser = InstrumentedParser(data, send)
 
     try:
         for event_value in parser.parse():
@@ -60,7 +99,6 @@ def player(send, url):
                 if isinstance(value, bytes):
                     value = value.decode('utf-8')
                 send('PARSE', [event, value])
-            sleep(0.25)
     except Exception as e:
         send('ERROR', str(e))
 
