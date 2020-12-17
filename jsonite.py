@@ -619,10 +619,41 @@ class Parser:
         # Return the mutated root object.
         return root
 
+###############################################################################
+# CLI
+###############################################################################
+
+def convert_dot_path_to_yield_path(path):
+    # Convert the dot-delimited --path argument to a path list required by
+    # Parser.yield_paths().
+    final_path = []
+    i = 0
+    splits = [int(seg) if seg.isdigit() else seg.encode('utf-8')
+              for seg in path.split('.')]
+    splits_len = len(splits)
+    while i < splits_len:
+        seg = splits[i]
+        if seg != b'':
+            final_path.append(seg)
+        else:
+            # An empty seg indicates the presence of a double-dot which is used
+            # to indicate an escaped segment value dot.
+            if final_path:
+                final_path[-1] += b'.' + splits[i + 1]
+            else:
+                final_path.append(b'.' + splits[i + 1])
+            i += 1
+        i += 1
+    return final_path
+
+def convert_yielded_key_to_dot_path(key):
+    return '.'.join(str(seg) if isinstance(seg, int)
+                    else seg.decode('utf-8') for seg in key)
 
 if __name__ == '__main__':
     import argparse
     from io import BytesIO
+    from json import dumps
     from pprint import pprint
 
     arg_parser = argparse.ArgumentParser()
@@ -633,15 +664,38 @@ if __name__ == '__main__':
 
     arg_parser.add_argument('--action', choices=('load', 'parse'),
                             default="load")
+    arg_parser.add_argument('--path', type=str, action='append',
+                            help='Dot-delimited path specifier with dots in keys escaped as a double-dot')
+
     args = arg_parser.parse_args()
 
     if args.string:
         args.file = BytesIO(args.string.encode('utf-8'))
 
+    if args.path and args.action != 'load':
+        arg_parser.error('Please specify --action=load when using --path')
+
     parser = Parser(args.file)
 
     if args.action == 'load':
-        pprint(parser.load())
+        if not args.path:
+            # Load it all and pretty-print the result.
+            pprint(parser.load())
+        else:
+            # Load only the specified paths.
+            result = {}
+            # Convert the dot-delimited paths to path segments lists as
+            # required by Parser.yield_paths().
+            paths = list(map(convert_dot_path_to_yield_path, args.path))
+            for key, value in parser.yield_paths(paths):
+                # Conver the yielded key back to a dot path.
+                key = convert_yielded_key_to_dot_path(key)
+                if isinstance(value, bytes):
+                    result[key] = value.decode('utf-8')
+                else:
+                    result[key] = value
+            # Print the result as JSON.
+            print(dumps(result, indent=2))
 
     elif args.action == 'parse':
         for event_value in parser.parse():
