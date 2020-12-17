@@ -4,9 +4,10 @@
 ###############################################################################
 
 class UnexpectedCharacter(Exception):
-    def __init__(self, c, i):
+    def __init__(self, char, idx, matcher):
         super().__init__(
-            'Unexpected character "{}" at position {}'.format(c, i)
+            'Expected {} at position {} but got {}'.format(
+                getattr(matcher, '__name__', matcher), idx, char)
         )
 
 ###############################################################################
@@ -23,37 +24,54 @@ PERIOD = b'.'
 # class a character belongs.
 ###############################################################################
 class Matchers:
-    OBJECT_OPEN = b'{'
+    ARRAY_CLOSE = b']'
     ARRAY_OPEN = b'['
-    STRING_START = b'"'
-    STRING_TERMINATOR = b'"'
-    NULL_START = b'n'
-    TRUE_START = b't'
+    EOF = b''
     FALSE_START = b'f'
     IS_NUMBER_START = lambda c: c == b'-' or c.isdigit()
-    OBJECT_CLOSE = b'}'
-    ARRAY_CLOSE = b']'
-    KV_SEP = b':'
     ITEM_SEP = b','
-    EOF = b''
+    KV_SEP = b':'
+    NULL_START = b'n'
+    OBJECT_CLOSE = b'}'
+    OBJECT_OPEN = b'{'
+    STRING_START = b'"'
+    STRING_TERMINATOR = b'"'
+    TRUE_START = b't'
 
 # Set derived matchers.
-Matchers.OBJECT_KEY_START = Matchers.STRING_START
-Matchers.IS_VALUE_START = lambda c: (
-    c == Matchers.OBJECT_OPEN
-    or c == Matchers.ARRAY_OPEN
-    or c == Matchers.STRING_START
-    or Matchers.IS_NUMBER_START(c)
-    or c == Matchers.NULL_START
-    or c == Matchers.TRUE_START
-    or c == Matchers.FALSE_START
-)
-Matchers.IS_OBJECT_VALUE_START = lambda c: Matchers.IS_VALUE_START(c)
-Matchers.IS_ARRAY_VALUE_START = lambda c: Matchers.IS_VALUE_START(c)
-Matchers.IS_NEXT_OBJECT_KEY_START = \
-    lambda c: c == Matchers.ITEM_SEP or c == Matchers.OBJECT_KEY_START
-Matchers.IS_NEXT_ARRAY_VALUE_START = \
-    lambda c: c == Matchers.ITEM_SEP or Matchers.IS_ARRAY_VALUE_START(c)
+# Create separate scalar / object / array matchers that use the same logic but
+# exist as uniquely identifiable values.
+def IS_OBJECT_KEY_START(c):
+    return c == Matchers.STRING_START
+Matchers.IS_OBJECT_KEY_START = IS_OBJECT_KEY_START
+
+def IS_VALUE_START(c):
+    return (
+        c == Matchers.OBJECT_OPEN
+        or c == Matchers.ARRAY_OPEN
+        or c == Matchers.STRING_START
+        or Matchers.IS_NUMBER_START(c)
+        or c == Matchers.NULL_START
+        or c == Matchers.TRUE_START
+        or c == Matchers.FALSE_START
+    )
+Matchers.IS_VALUE_START = IS_VALUE_START
+
+def IS_ARRAY_VALUE_START(c):
+    return IS_VALUE_START(c)
+Matchers.IS_ARRAY_VALUE_START = IS_ARRAY_VALUE_START
+
+def IS_OBJECT_VALUE_START(c):
+    return IS_VALUE_START(c)
+Matchers.IS_OBJECT_VALUE_START = IS_OBJECT_VALUE_START
+
+def IS_ARRAY_ITEM_SEP(c):
+    return c == Matchers.ITEM_SEP
+Matchers.IS_ARRAY_ITEM_SEP = IS_ARRAY_ITEM_SEP
+
+def IS_OBJECT_ITEM_SEP(c):
+    return c == Matchers.ITEM_SEP
+Matchers.IS_OBJECT_ITEM_SEP = IS_OBJECT_ITEM_SEP
 
 ###############################################################################
 # Events
@@ -162,7 +180,7 @@ class Parser:
             # Return the character and matched mandatory matcher.
             return c, matcher
         # The mandatory matcher failed, so raise UnexpectedCharacter.
-        raise UnexpectedCharacter(c, self.char_num)
+        raise UnexpectedCharacter(c, self.char_num, matcher)
 
     def yield_while(self, pred):
         # Yield characters from the stream until testing them against the
@@ -244,7 +262,7 @@ class Parser:
             # No context here for knowing what, if anything, should follow.
             return
 
-        if match == Matchers.OBJECT_KEY_START:
+        if match == Matchers.IS_OBJECT_KEY_START:
             # Char is the expected object key's opening double-qoute.
             # Yield the object key string.
             yield from self.with_drain(Events.OBJECT_KEY, self.parse_string())
@@ -258,35 +276,23 @@ class Parser:
             self.expect_stack.append(Matchers.IS_OBJECT_VALUE_START)
             return
 
-        if match == Matchers.IS_NEXT_OBJECT_KEY_START:
+        if match == Matchers.IS_OBJECT_ITEM_SEP:
             # Char is an item separator (i.e. ',') in a post-object-value
             # context.
             # Expect an object value, item separator (thus accomodating
             # unlimited trailing commas), or object terminator to follow.
             self.expect_stack.append(
-                (
-                    Matchers.OBJECT_KEY_START,
-                    (
-                        Matchers.IS_NEXT_OBJECT_KEY_START,
-                        self.expect_stack.pop()
-                    )
-                )
+                (Matchers.IS_OBJECT_KEY_START, self.expect_stack.pop())
             )
             return
 
-        if match == Matchers.IS_NEXT_ARRAY_VALUE_START:
+        if match == Matchers.IS_ARRAY_ITEM_SEP:
             # Char is an item separator (i.e. ',') in a post-array-value
             # context.
             # Expect an array value, item separator (thus accomodating
             # unlimited trailing commas), or array terminator to follow.
             self.expect_stack.append(
-                (
-                    Matchers.IS_ARRAY_VALUE_START,
-                    (
-                        Matchers.IS_NEXT_ARRAY_VALUE_START,
-                        self.expect_stack.pop()
-                    )
-                )
+                (Matchers.IS_ARRAY_VALUE_START, self.expect_stack.pop())
             )
             return
 
@@ -306,13 +312,7 @@ class Parser:
             # Expect an object key, item separator, or object terminator to
             # follow.
             self.expect_stack.append(
-                (
-                    Matchers.OBJECT_KEY_START,
-                    (
-                        Matchers.IS_NEXT_OBJECT_KEY_START,
-                        Matchers.OBJECT_CLOSE
-                    )
-                )
+                (Matchers.IS_OBJECT_KEY_START, Matchers.OBJECT_CLOSE)
             )
             return
 
@@ -322,13 +322,7 @@ class Parser:
             # follow.
             yield Events.ARRAY_OPEN
             self.expect_stack.append(
-                (
-                    Matchers.IS_ARRAY_VALUE_START,
-                    (
-                        Matchers.IS_NEXT_ARRAY_VALUE_START,
-                        Matchers.ARRAY_CLOSE
-                    )
-                )
+                (Matchers.IS_ARRAY_VALUE_START, Matchers.ARRAY_CLOSE)
             )
             return
 
@@ -402,17 +396,15 @@ class Parser:
 
         if match == Matchers.IS_ARRAY_VALUE_START:
             # We just yielded an array value.
-            # Expect either an array item separator or array terminator to
-            # follow.
+            # Expect an array item separator or array terminator to follow.
             self.expect_stack.append(
-                (Matchers.IS_NEXT_ARRAY_VALUE_START, self.expect_stack.pop())
+                (Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop())
             )
         elif match == Matchers.IS_OBJECT_VALUE_START:
             # We just yielded an object value.
-            # Expect either an object item separator or object terminator to
-            # follow.
+            # Expect an object item separator or object terminator to follow.
             self.expect_stack.append(
-                (Matchers.IS_NEXT_OBJECT_KEY_START, self.expect_stack.pop())
+                (Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop())
             )
 
     def convert(self, event, value):
@@ -457,16 +449,34 @@ class Parser:
         unyielded_path_idxs = set(range(len(paths)))
         # Define the current path stack.
         path = []
-        for event_value in self.parse():
+        parse_gen = self.parse()
+        for event_value in parse_gen:
             event, value = split_event_value(event_value)
             if event == Events.OBJECT_OPEN:
                 # An object has opened.
                 # If the current path node is an array index, increment it.
                 if path and isinstance(path[-1], int):
                     path[-1] += 1
-                # Append an empty object indicator to the current path, to be
-                # overwritten by the next parsed key.
-                path.append(PERIOD)
+                # For each unyielded path, attempt to match it against the
+                # current path. If it matches, yield the event and remove the
+                # path index from the unyielded set.
+                yielded = False
+                for i in unyielded_path_idxs:
+                    if path == paths[i]:
+                        # Reset the parser state such that the next call will
+                        # re-yield this same OBJECT_OPEN to make load() work.
+                        self.expect_stack.pop()
+                        self.expect_stack.append(Matchers.OBJECT_OPEN)
+                        self.stuff_char(Matchers.OBJECT_OPEN)
+                        yield path, self.load(parse_gen)
+                        unyielded_path_idxs.remove(i)
+                        yielded = True
+                        break
+                if not yielded:
+                    # If this container was not already load()ed and yielded,
+                    # Append an empty object indicator to the current path, to
+                    # be overwritten by the next parsed key.
+                    path.append(PERIOD)
                 continue
 
             elif event == Events.OBJECT_CLOSE:
@@ -480,9 +490,26 @@ class Parser:
                 # If the current path node is an array index, increment it.
                 if path and isinstance(path[-1], int):
                     path[-1] += 1
-                # Append an array index of -1 to the current path, to be
-                # increment on the next parsed array value.
-                path.append(-1)
+                # For each unyielded path, attempt to match it against the
+                # current path. If it matches, yield the event and remove the
+                # path index from the unyielded set.
+                yielded = False
+                for i in unyielded_path_idxs:
+                    if path == paths[i]:
+                        # Reset the parser state such that the next call will
+                        # re-yield this same ARRAY_OPEN to make load() work.
+                        self.expect_stack.pop()
+                        self.expect_stack.append(Matchers.ARRAY_OPEN)
+                        self.stuff_char(Matchers.ARRAY_OPEN)
+                        yield path, self.load(parse_gen)
+                        unyielded_path_idxs.remove(i)
+                        yielded = True
+                        break
+                if not yielded:
+                    # If this container was not already load()ed and yielded,
+                    # Append an array index of -1 to the current path, to be
+                    # increment on the next parsed array value.
+                    path.append(-1)
                 continue
 
             elif event == Events.ARRAY_CLOSE:
@@ -532,10 +559,12 @@ class Parser:
             if len(unyielded_path_idxs) == 0:
                 return
 
-    def load(self):
-        # Parse the entire stream and return a single Python object, similar
-        # to the built-in json.load() / json.loads() behavior.
-        parse_gen = self.parse()
+    def load(self, parse_gen=None):
+        # If parse_gen is specified, parse the single next value in the stream,
+        # otherwise parse the entire stream, and return a single Python object,
+        # similar to the built-in json.load() / json.loads() behavior.
+        if parse_gen is None:
+            parse_gen = self.parse()
         # Initialize the value based on the first read.
         event, value = split_event_value(next(parse_gen))
         # If it's a single scalar value, convert and return it.
