@@ -3,6 +3,8 @@
 # Streaming UTF-8 Decoder
 ###############################################################################
 
+STRICT, REPLACE, IGNORE = 0, 1, 2
+
 class InvalidUTF8Encoding(Exception):
     def __init__(self, byte_num):
         super().__init__(
@@ -14,10 +16,11 @@ class UTF8Decoder:
     REPLACEMENT_CHAR = '\ufffd'
     MAX_CODEPOINT = 0x10FFFF
 
-    def __init__(self, stream):
+    def __init__(self, stream, errors=STRICT):
         self.stream = stream
         self.byte_num = 0
         self.first_read = True
+        self.errors = errors
 
     def read_one(self):
         c = self.stream.read(1)
@@ -34,6 +37,14 @@ class UTF8Decoder:
 
     def __iter__(self):
         return self
+
+    def error(self):
+        if self.errors == STRICT:
+            raise InvalidUTF8Encoding(self.byte_num)
+        elif self.errors == REPLACE:
+            return self.REPLACEMENT_CHAR
+        else:
+            return next(self)
 
     def __next__(self):
         # See: https://en.wikipedia.org/wiki/UTF-8#Encoding
@@ -65,8 +76,12 @@ class UTF8Decoder:
             # 6-byte char.
             bytes_remaining = 5
             codepoint = (byte & 0b00000001) << 30
+        elif byte & 0b11000000 == 0b10000000:
+            # Unexpected continuation.
+            return self.error()
         else:
-            raise InvalidUTF8Encoding(self.byte_num)
+            # Some other unexpected condition.
+            return self.error()
 
         # Read the remaining bytes, asserting that they're valid,
         # then shifting and ORing them with the codepoint.
@@ -75,9 +90,9 @@ class UTF8Decoder:
                 byte = ord(self.read_one())
             except StopIteration:
                 # Stream exhausted in the middle of a multi-byte char.
-                raise InvalidUTF8Encoding(self.byte_num)
+                self.error()
             if byte & 0b11000000 != 0b10000000:
-                raise InvalidUTF8Encoding(self.byte_num)
+                self.error()
             codepoint |= ((byte & 0b00111111) << ((bytes_remaining - 1) * 6))
             bytes_remaining -= 1
 

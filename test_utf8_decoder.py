@@ -2,6 +2,7 @@
 from io import BytesIO
 from sys import stdout
 
+import utf8_decoder
 from utf8_decoder import (
     InvalidUTF8Encoding,
     UTF8Decoder,
@@ -34,7 +35,7 @@ def _assertRaises(exc, fn, *args, **kwargs):
 
 def test_stress_test():
     fh = open('UTF-8-test.txt', 'rb')
-    decoder = UTF8Decoder(fh)
+    decoder = UTF8Decoder(fh, errors=utf8_decoder.REPLACE)
     for c in decoder:
         stdout.write(c)
 
