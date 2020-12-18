@@ -514,9 +514,6 @@ class Parser:
                     if path == paths[i]:
                         # Reset the parser state such that the next call will
                         # re-yield this same OBJECT_OPEN to make load() work.
-                        self.expect_stack.pop()
-                        self.expect_stack.append(Matchers.OBJECT_OPEN)
-                        self.stuff_char(Matchers.OBJECT_OPEN)
                         yield path, self.load(parse_gen)
                         unyielded_path_idxs.remove(i)
                         yielded = True
@@ -547,9 +544,6 @@ class Parser:
                     if path == paths[i]:
                         # Reset the parser state such that the next call will
                         # re-yield this same ARRAY_OPEN to make load() work.
-                        self.expect_stack.pop()
-                        self.expect_stack.append(Matchers.ARRAY_OPEN)
-                        self.stuff_char(Matchers.ARRAY_OPEN)
                         yield path, self.load(parse_gen)
                         unyielded_path_idxs.remove(i)
                         yielded = True
@@ -614,8 +608,10 @@ class Parser:
         # similar to the built-in json.load() / json.loads() behavior.
         if parse_gen is None:
             parse_gen = self.parse()
+
         # Initialize the value based on the first read.
         event, value = split_event_value(next(parse_gen))
+
         # If it's a single scalar value, convert and return it.
         if (event == Events.STRING
             or event == Events.NUMBER
@@ -625,9 +621,9 @@ class Parser:
             return self.convert(event, value)
 
         # Create an initial, root object to represent the initial container.
-        if event == Events.OBJECT_OPEN:
+        if (event == Events.OBJECT_OPEN or event == Events.OBJECT_KEY):
             root = {}
-        elif event == Events.ARRAY_OPEN:
+        elif (event == Events.ARRAY_OPEN or event.startswith('ARRAY_VALUE_')):
             root = []
         else:
             raise NotImplementedError(event)
@@ -656,6 +652,13 @@ class Parser:
             # Close the current container object and reopen the last one.
             nonlocal container
             container = container_stack.pop()
+
+        # If we're already in the context of an array or object item, use
+        # it to init the container state.
+        if event.startswith('ARRAY_VALUE_'):
+            container.append(self.convert(event, value))
+        elif event == Events.OBJECT_KEY:
+            key = self.convert(event, value)
 
         # Start parsing.
         for event_value in parse_gen:
