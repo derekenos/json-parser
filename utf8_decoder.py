@@ -11,6 +11,9 @@ class InvalidUTF8Encoding(Exception):
         )
 
 class UTF8Decoder:
+    REPLACEMENT_CHAR = '\ufffd'
+    MAX_CODEPOINT = 0x10FFFF
+
     def __init__(self, stream):
         self.stream = stream
         self.byte_num = 0
@@ -77,4 +80,9 @@ class UTF8Decoder:
                 raise InvalidUTF8Encoding(self.byte_num)
             codepoint |= ((byte & 0b00111111) << ((bytes_remaining - 1) * 6))
             bytes_remaining -= 1
+
+        # Python only supports codepoints up to U+10FFFF
+        if codepoint > self.MAX_CODEPOINT:
+            return self.REPLACEMENT_CHAR
+
         return chr(codepoint)
