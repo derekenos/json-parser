@@ -16,6 +16,10 @@ class UnexpectedCharacter(Exception):
 
 PERIOD = b'.'
 
+# Define the Parser.container_value_context_stack values.
+ARRAY_VALUE_CONTEXT = 'ARRAY_VALUE_CONTEXT'
+OBJECT_VALUE_CONTEXT = 'OBJECT_VALUE_CONTEXT'
+
 ###############################################################################
 # Matchers
 #
@@ -81,27 +85,27 @@ Matchers.IS_OBJECT_ITEM_SEP = IS_OBJECT_ITEM_SEP
 ###############################################################################
 
 class Events:
-    OBJECT_OPEN = 'OBJECT_OPEN'
-    OBJECT_CLOSE = 'OBJECT_CLOSE'
-    ARRAY_OPEN = 'ARRAY_OPEN'
     ARRAY_CLOSE = 'ARRAY_CLOSE'
-    OBJECT_KEY = 'OBJECT_KEY'
-    ARRAY_VALUE_STRING = 'ARRAY_VALUE_STRING'
-    ARRAY_VALUE_NUMBER = 'ARRAY_VALUE_NUMBER'
-    ARRAY_VALUE_NULL = 'ARRAY_VALUE_NULL'
-    ARRAY_VALUE_TRUE = 'ARRAY_VALUE_TRUE'
+    ARRAY_OPEN = 'ARRAY_OPEN'
     ARRAY_VALUE_FALSE = 'ARRAY_VALUE_FALSE'
-    OBJECT_VALUE_STRING = 'OBJECT_VALUE_STRING'
-    OBJECT_VALUE_NUMBER = 'OBJECT_VALUE_NUMBER'
-    OBJECT_VALUE_NULL = 'OBJECT_VALUE_NULL'
-    OBJECT_VALUE_TRUE = 'OBJECT_VALUE_TRUE'
-    OBJECT_VALUE_FALSE = 'OBJECT_VALUE_FALSE'
-    STRING = 'STRING'
-    NUMBER = 'NUMBER'
-    NULL = 'NULL'
-    TRUE = 'TRUE'
-    FALSE = 'FALSE'
+    ARRAY_VALUE_NULL = 'ARRAY_VALUE_NULL'
+    ARRAY_VALUE_NUMBER = 'ARRAY_VALUE_NUMBER'
+    ARRAY_VALUE_STRING = 'ARRAY_VALUE_STRING'
+    ARRAY_VALUE_TRUE = 'ARRAY_VALUE_TRUE'
     EOF = 'END_OF_FILE'
+    FALSE = 'FALSE'
+    NULL = 'NULL'
+    NUMBER = 'NUMBER'
+    OBJECT_CLOSE = 'OBJECT_CLOSE'
+    OBJECT_KEY = 'OBJECT_KEY'
+    OBJECT_OPEN = 'OBJECT_OPEN'
+    OBJECT_VALUE_FALSE = 'OBJECT_VALUE_FALSE'
+    OBJECT_VALUE_NULL = 'OBJECT_VALUE_NULL'
+    OBJECT_VALUE_NUMBER = 'OBJECT_VALUE_NUMBER'
+    OBJECT_VALUE_STRING = 'OBJECT_VALUE_STRING'
+    OBJECT_VALUE_TRUE = 'OBJECT_VALUE_TRUE'
+    STRING = 'STRING'
+    TRUE = 'TRUE'
 
 ###############################################################################
 # Helpers
@@ -126,6 +130,18 @@ class Parser:
         # before reading again from the stream, thus providing a sort of 1-byte
         # lookahead mechanism.
         self.stuffed_char = None
+        # Define a stack to store the Matcher that we expect to match the next
+        # character from next_nonspace_char(). A single matcher element is
+        # considered to be manadatory and parsing will fail if the matcher
+        # fails. A 2-element tuple can be provided with the first element as an
+        # optional matcher and the second as a mandatory:
+        #   i.e. ( <optional-match>, <mandatory-matcher> )
+        self.expect_stack = [ Matchers.EOF, Matchers.IS_VALUE_START ]
+
+        # Define a stack for storing the context of the current container-type
+        # (i.e. object value or array value) that we're currently parsing. This
+        # is used in order to yield the appropriate event on array/object close.
+        self.container_value_context_stack = []
 
     def next_char(self):
         # If there's a stuffed nonspace char, return that and do not increment
@@ -233,7 +249,6 @@ class Parser:
         yield from self.yield_while(is_digit)
 
     def parse(self):
-        self.expect_stack = [ Matchers.EOF, Matchers.IS_VALUE_START ]
         while True:
             for event_value in self.parse_next():
                 if event_value is None:
@@ -250,16 +265,70 @@ class Parser:
             yield None
             return
 
-        if match == Matchers.OBJECT_CLOSE:
-            # Char is an object terminator (i.e. '}').
-            yield Events.OBJECT_CLOSE
-            # No context here for knowing what, if anything, should follow.
+        if c == Matchers.ARRAY_OPEN:
+            # Char is an array initiator (i.e. '[')
+            yield Events.ARRAY_OPEN
+            # Expect an array value, item separator, or array terminator to
+            # follow.
+            self.expect_stack.append(
+                (Matchers.IS_ARRAY_VALUE_START, Matchers.ARRAY_CLOSE)
+            )
+            # If the context is array or object, push the appropriate value
+            # onto the container_value_context_stack.
+            if match == Matchers.IS_ARRAY_VALUE_START:
+                self.container_value_context_stack.append(ARRAY_VALUE_CONTEXT)
+            elif match == Matchers.IS_OBJECT_VALUE_START:
+                self.container_value_context_stack.append(OBJECT_VALUE_CONTEXT)
+            return
+
+        if c == Matchers.OBJECT_OPEN:
+            # Char is an object initiator (i.e. '{')
+            yield Events.OBJECT_OPEN
+            # Expect an object key, item separator, or object terminator to
+            # follow.
+            self.expect_stack.append(
+                (Matchers.IS_OBJECT_KEY_START, Matchers.OBJECT_CLOSE)
+            )
+            # If the context is array or object, push the appropriate value
+            # onto the container_value_context_stack.
+            if match == Matchers.IS_ARRAY_VALUE_START:
+                self.container_value_context_stack.append(ARRAY_VALUE_CONTEXT)
+            elif match == Matchers.IS_OBJECT_VALUE_START:
+                self.container_value_context_stack.append(OBJECT_VALUE_CONTEXT)
             return
 
         if match == Matchers.ARRAY_CLOSE:
             # Char is an array terminator (i.e. ']')
             yield Events.ARRAY_CLOSE
-            # No context here for knowing what, if anything, should follow.
+            # If container_value_context_stack is non-empty, pop the last
+            # context.
+            if self.container_value_context_stack:
+                context = self.container_value_context_stack.pop()
+                # Expect whatever's appropriate for the context.
+                item_sep_matcher = (
+                    Matchers.IS_ARRAY_ITEM_SEP if context == ARRAY_VALUE_CONTEXT
+                    else Matchers.IS_OBJECT_ITEM_SEP
+                )
+                self.expect_stack.append(
+                    (item_sep_matcher, self.expect_stack.pop())
+                )
+            return
+
+        if match == Matchers.OBJECT_CLOSE:
+            # Char is an object terminator (i.e. '}').
+            yield Events.OBJECT_CLOSE
+            # If container_value_context_stack is non-empty, pop the last
+            # context.
+            if self.container_value_context_stack:
+                context = self.container_value_context_stack.pop()
+                # Expect whatever's appropriate for the context.
+                item_sep_matcher = (
+                    Matchers.IS_ARRAY_ITEM_SEP if context == ARRAY_VALUE_CONTEXT
+                    else Matchers.IS_OBJECT_ITEM_SEP
+                )
+                self.expect_stack.append(
+                    (item_sep_matcher, self.expect_stack.pop())
+                )
             return
 
         if match == Matchers.IS_OBJECT_KEY_START:
@@ -297,34 +366,14 @@ class Parser:
             return
 
         # Having exhausted the above clauses, we find ourselves dealing with a
-        # new value, either as a scalar or in the context of an array or object
-        # value. Assert that this is so.
+        # new scalar value, either as a standalone value or in the context of an
+        # array or object value. Assert that this is so.
         if match not in (
                 Matchers.IS_VALUE_START,
                 Matchers.IS_OBJECT_VALUE_START,
                 Matchers.IS_ARRAY_VALUE_START
             ):
             raise AssertionError(c, match, self.char_num)
-
-        if c == Matchers.OBJECT_OPEN:
-            # Char is an object initiator (i.e. '{')
-            yield Events.OBJECT_OPEN
-            # Expect an object key, item separator, or object terminator to
-            # follow.
-            self.expect_stack.append(
-                (Matchers.IS_OBJECT_KEY_START, Matchers.OBJECT_CLOSE)
-            )
-            return
-
-        if c == Matchers.ARRAY_OPEN:
-            # Char is an array initiator (i.e. '[')
-            # Expect an array value, item separator, or array terminator to
-            # follow.
-            yield Events.ARRAY_OPEN
-            self.expect_stack.append(
-                (Matchers.IS_ARRAY_VALUE_START, Matchers.ARRAY_CLOSE)
-            )
-            return
 
         if c == Matchers.STRING_START:
             # Char is a string initiator (i.e. '"')
