@@ -33,8 +33,8 @@ class InstrumentedExpectStack(list):
 
     def decode_matcher(self, matcher):
         if not isinstance(matcher, FunctionType):
-            # Matcher is a byte string.
-            return matcher.decode('utf-8')
+            # Matcher is a string.
+            return matcher
         # Matcher is a function.
         for k, v in Matchers.__dict__.items():
             if matcher == v:
@@ -60,7 +60,7 @@ class InstrumentedParser(Parser):
         any_stuffed = self.stuffed_char is not None
         c = super().next_char()
         if not any_stuffed:
-            self.send('NEXT_CHAR', c.decode('utf-8'))
+            self.send('NEXT_CHAR', c)
             sleep(0.1)
         return c
 
@@ -96,8 +96,6 @@ def player(send, url):
                 send('PARSE', event)
             else:
                 value = parser.convert(event, value)
-                if isinstance(value, bytes):
-                    value = value.decode('utf-8')
                 send('PARSE', [event, value])
     except Exception as e:
         send('ERROR', str(e))
