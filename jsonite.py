@@ -1,4 +1,6 @@
 
+from utf8_decoder import UTF8Decoder
+
 ###############################################################################
 # Exceptions
 ###############################################################################
@@ -14,7 +16,7 @@ class UnexpectedCharacter(Exception):
 # Constants
 ###############################################################################
 
-PERIOD = b'.'
+PERIOD = '.'
 
 # Define the Parser.container_value_context_stack values.
 ARRAY_VALUE_CONTEXT = 'ARRAY_VALUE_CONTEXT'
@@ -28,19 +30,19 @@ OBJECT_VALUE_CONTEXT = 'OBJECT_VALUE_CONTEXT'
 # class a character belongs.
 ###############################################################################
 class Matchers:
-    ARRAY_CLOSE = b']'
-    ARRAY_OPEN = b'['
-    EOF = b''
-    FALSE_START = b'f'
-    IS_NUMBER_START = lambda c: c == b'-' or c.isdigit()
-    ITEM_SEP = b','
-    KV_SEP = b':'
-    NULL_START = b'n'
-    OBJECT_CLOSE = b'}'
-    OBJECT_OPEN = b'{'
-    STRING_START = b'"'
-    STRING_TERMINATOR = b'"'
-    TRUE_START = b't'
+    OBJECT_OPEN = '{'
+    ARRAY_OPEN = '['
+    STRING_START = '"'
+    STRING_TERMINATOR = '"'
+    NULL_START = 'n'
+    TRUE_START = 't'
+    FALSE_START = 'f'
+    IS_NUMBER_START = lambda c: c == '-' or c.isdigit()
+    OBJECT_CLOSE = '}'
+    ARRAY_CLOSE = ']'
+    KV_SEP = ':'
+    ITEM_SEP = ','
+    EOF = ''
 
 # Set derived matchers.
 # Create separate scalar / object / array matchers that use the same logic but
@@ -120,8 +122,11 @@ split_event_value = lambda x: (x if isinstance(x, tuple) else (x, None))
 ###############################################################################
 
 class Parser:
-    def __init__(self, stream):
-        self.stream = stream
+    def __init__(self, stream, encoding='utf-8'):
+        if encoding != 'utf-8':
+            raise NotImplementedError('utf-8 is the only supported encoding')
+        self.stream = UTF8Decoder(stream)
+
         # Store the current stream char number for reporting the position of
         # unexpected characters.
         self.char_num = 0
@@ -181,9 +186,9 @@ class Parser:
         # Iterate through all tuple-type matchers.
         while isinstance(matcher, tuple):
             optional, matcher = matcher
-            # If the matcher doesn't look like a string (i.e. no 'decode'),
+            # If the matcher doesn't look like a string (i.e. no 'encode'),
             # assume it's a function and call it, other test again the string.
-            if ((not hasattr(optional, 'decode') and optional(c))
+            if ((not hasattr(optional, 'encode') and optional(c))
                 or c == optional):
                 # An optional matcher matched, so push the mandatory one back
                 # onto the expect_stack.
@@ -192,7 +197,7 @@ class Parser:
                 return c, optional
         # Either no optional matches were specified or none matched, so attempt
         # to match against the mandatory matcher.
-        if (not hasattr(matcher, 'decode') and matcher(c)) or c == matcher:
+        if (not hasattr(matcher, 'encode') and matcher(c)) or c == matcher:
             # Return the character and matched mandatory matcher.
             return c, matcher
         # The mandatory matcher failed, so raise UnexpectedCharacter.
@@ -232,7 +237,7 @@ class Parser:
     def parse_number(self):
         # Yield characters from the stream up until the next non-number char.
         # Expect the first character to be a negative sign or digit.
-        yield self.expect(lambda c: c == b'-' or c.isdigit())[0]
+        yield self.expect(lambda c: c == '-' or c.isdigit())[0]
         # Expect one or more digits.
         yield from self.yield_while(is_digit)
         # Check to see if the next char is a decimal point.
@@ -403,9 +408,9 @@ class Parser:
         elif c == Matchers.NULL_START:
             # Char is a null initiator (i.e. 'n')
             # Expect the next 3 chars to be 'ull' and yield the event.
-            self.expect(b'u')
-            self.expect(b'l')
-            self.expect(b'l')
+            self.expect('u')
+            self.expect('l')
+            self.expect('l')
             if match == Matchers.IS_OBJECT_VALUE_START:
                 yield Events.OBJECT_VALUE_NULL
             elif match == Matchers.IS_ARRAY_VALUE_START:
@@ -416,9 +421,9 @@ class Parser:
         elif c == Matchers.TRUE_START:
             # Char is a true initiator (i.e. 't')
             # Expect the next 3 chars to be 'rue' and yield the event.
-            self.expect(b'r')
-            self.expect(b'u')
-            self.expect(b'e')
+            self.expect('r')
+            self.expect('u')
+            self.expect('e')
             if match == Matchers.IS_OBJECT_VALUE_START:
                 yield Events.OBJECT_VALUE_TRUE
             elif match == Matchers.IS_ARRAY_VALUE_START:
@@ -429,10 +434,10 @@ class Parser:
         elif c == Matchers.FALSE_START:
             # Char is a false initiator (i.e. 'f')
             # Expect the next 4 chars to be 'alse' and yield the event.
-            self.expect(b'a')
-            self.expect(b'l')
-            self.expect(b's')
-            self.expect(b'e')
+            self.expect('a')
+            self.expect('l')
+            self.expect('s')
+            self.expect('e')
             if match == Matchers.IS_OBJECT_VALUE_START:
                 yield Events.OBJECT_VALUE_FALSE
             elif match == Matchers.IS_ARRAY_VALUE_START:
@@ -474,11 +479,11 @@ class Parser:
             or event == Events.OBJECT_VALUE_STRING
             or event == Events.STRING
             or event == Events.OBJECT_KEY):
-            return b''.join(value)
+            return ''.join(value)
         if (event == Events.ARRAY_VALUE_NUMBER
             or event == Events.OBJECT_VALUE_NUMBER
             or event == Events.NUMBER):
-            s = b''.join(value)
+            s = ''.join(value)
             # Cast to either float or int based on presence of a decimal place.
             return float(s) if PERIOD in s else int(s)
         raise NotImplementedError(event, value)
@@ -489,9 +494,9 @@ class Parser:
         #
         # paths must be an iterable of lists of byte strings and integers in
         # the format:
-        #   [ b'<object-key>', <array-index>, ... ]
+        #   [ '<object-key>', <array-index>, ... ]
         # Example:
-        #   [ b'people', 0, b'first_name' ]
+        #   [ 'people', 0, 'first_name' ]
         #
         # Track the indexes of the paths in paths to be yielded so that we can
         # abort as soon as all requested paths have been yielded.
@@ -709,33 +714,30 @@ def convert_dot_path_to_yield_path(path):
     # Parser.yield_paths().
     final_path = []
     i = 0
-    splits = [int(seg) if seg.isdigit() else seg.encode('utf-8')
-              for seg in path.split('.')]
+    splits = [int(seg) if seg.isdigit() else seg for seg in path.split('.')]
     splits_len = len(splits)
     while i < splits_len:
         seg = splits[i]
-        if seg != b'':
+        if seg != '':
             final_path.append(seg)
         else:
             # An empty seg indicates the presence of a double-dot which is used
             # to indicate an escaped segment value dot.
             if final_path:
-                final_path[-1] += b'.' + splits[i + 1]
+                final_path[-1] += '.' + splits[i + 1]
             else:
-                final_path.append(b'.' + splits[i + 1])
+                final_path.append('.' + splits[i + 1])
             i += 1
         i += 1
     return final_path
 
 def convert_yielded_key_to_dot_path(key):
-    return '.'.join(str(seg) if isinstance(seg, int)
-                    else seg.decode('utf-8') for seg in key)
+    return '.'.join(str(seg) if isinstance(seg, int) else seg for seg in key)
 
 if __name__ == '__main__':
     import argparse
     from io import BytesIO
     from json import dumps
-    from pprint import pprint
 
     arg_parser = argparse.ArgumentParser()
 
@@ -761,7 +763,7 @@ if __name__ == '__main__':
     if args.action == 'load':
         if not args.path:
             # Load it all and pretty-print the result.
-            pprint(parser.load())
+            print(dumps(parser.load(), indent=2))
         else:
             # Load only the specified paths.
             result = {}
@@ -784,12 +786,9 @@ if __name__ == '__main__':
             # required by Parser.yield_paths().
             paths = list(map(convert_dot_path_to_yield_path, args.path))
             for key, value in parser.yield_paths(paths):
-                # Conver the yielded key back to a dot path.
+                # Convert the yielded key back to a dot path.
                 key = convert_yielded_key_to_dot_path(key)
-                if isinstance(value, bytes):
-                    result[key] = value.decode('utf-8')
-                else:
-                    result[key] = value
+                result[key] = value
             # Print the result as JSON.
             print(dumps(result, indent=2))
 
