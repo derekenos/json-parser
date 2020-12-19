@@ -53,12 +53,15 @@ parser = Parser(fh)
 ```
 $ python3 jsonite.py --help
 usage: jsonite.py [-h] [--file FILE | --string STRING] [--action {load,parse}]
+                  [--path PATH]
 
 optional arguments:
   -h, --help            show this help message and exit
   --file FILE
   --string STRING
   --action {load,parse}
+  --path PATH           Dot-delimited path specifier with dots in keys escaped
+                        as a double-dot
 ```
 
 You must specify either `--file=<file-path>` or `--string='<some-json>'`, and the default action is `load`.
@@ -66,16 +69,28 @@ You must specify either `--file=<file-path>` or `--string='<some-json>'`, and th
 #### String loading example
 
 ```
-$ python3 jsonite.py --string='[1, 2, {"three": 4}]' --action=load
+python3 jsonite.py --string='[1, 2, {"three": 4}]' --action=load
 ```
 output:
 ```
 [1, 2, {b'three': 4}]
 ```
 
+#### String w/ specific path loading example
+
+```
+python3 jsonite.py --string='[1, 2, {"three": 4}]' --path 2.three
+```
+output:
+```
+{
+  "2.three": 4
+}
+```
+
 #### String parsing example
 ```
-$ python3 jsonite.py --string='[1, 2, {"three": 4}]' --action=parse
+python3 jsonite.py --string='[1, 2, {"three": 4}]' --action=parse
 ```
 output:
 ```
