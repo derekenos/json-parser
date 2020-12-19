@@ -765,6 +765,21 @@ if __name__ == '__main__':
         else:
             # Load only the specified paths.
             result = {}
+            # Assert that no path is the prefix of another, indicating both
+            # a container and sub sub-object which won't work because the
+            # container itself will be read/consumed before the sub-object
+            # ever has a chance.
+            num_paths = len(args.path)
+            for a in args.path:
+                for b in args.path:
+                    if a == b:
+                        continue
+                    if b.startswith(a) and b[len(a)] == '.':
+                        arg_parser.error(
+                            'Specifying container sub-elements ({}) and the '\
+                            'container itself ({}) is not supported.'
+                            .format(b, a)
+                        )
             # Convert the dot-delimited paths to path segments lists as
             # required by Parser.yield_paths().
             paths = list(map(convert_dot_path_to_yield_path, args.path))
