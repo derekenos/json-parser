@@ -103,9 +103,3 @@ OBJECT_VALUE_NUMBER 4
 OBJECT_CLOSE None
 ARRAY_CLOSE None
 ```
-
-## Deficiencies
-
-- Deals entirely in byte strings / doesn't support any decoding
-- `yield_paths()` only yields scalar values (i.e. strings, numbers, nulls, trues, falses) and not containers (i.e. arrays and objects)
-- ... probably a ton of other things that are outside my current use-case ...
