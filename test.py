@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 
 from io import BytesIO
 from sys import stdout
@@ -47,7 +48,7 @@ def parse(b):
     result = []
     for x in parser.parse():
         if isinstance(x, tuple):
-            result.append((x[0], b''.join(x[1])))
+            result.append((x[0], ''.join(x[1])))
         else:
             result.append(x)
     return result
@@ -57,22 +58,25 @@ def parse(b):
 ###############################################################################
 
 def test_string():
-    _assertEqual(parse(b'"test"'), [('STRING', b'test')])
+    _assertEqual(parse(b'"test"'), [('STRING', 'test')])
+
+def test_nonascii_string():
+    _assertEqual(parse('"κόσμε"'.encode('utf-8')), [('STRING', 'κόσμε')])
 
 def test_single_digit():
-    _assertEqual(parse(b'0'), [('NUMBER', b'0')])
+    _assertEqual(parse(b'0'), [('NUMBER', '0')])
 
 def test_double_digit():
-    _assertEqual(parse(b'13'), [('NUMBER', b'13')])
+    _assertEqual(parse(b'13'), [('NUMBER', '13')])
 
 def test_negative_digit():
-    _assertEqual(parse(b'-3'), [('NUMBER', b'-3')])
+    _assertEqual(parse(b'-3'), [('NUMBER', '-3')])
 
 def test_float():
-    _assertEqual(parse(b'3.1415'), [('NUMBER', b'3.1415')])
+    _assertEqual(parse(b'3.1415'), [('NUMBER', '3.1415')])
 
 def test_negative_float():
-    _assertEqual(parse(b'-3.1415'), [('NUMBER', b'-3.1415')])
+    _assertEqual(parse(b'-3.1415'), [('NUMBER', '-3.1415')])
 
 def test_null():
     _assertEqual(parse(b'null'), ['NULL'])
@@ -110,13 +114,13 @@ def test_empty_object():
 def test_single_element_array():
     _assertEqual(
         parse(b'[1]'),
-        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', b'1'), 'ARRAY_CLOSE']
+        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', '1'), 'ARRAY_CLOSE']
     )
 
 def test_single_element_array_with_trailing_comma():
     _assertEqual(
         parse(b'[1]'),
-        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', b'1'), 'ARRAY_CLOSE']
+        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', '1'), 'ARRAY_CLOSE']
     )
 
 ###############################################################################
@@ -128,8 +132,8 @@ def test_single_item_object():
         parse(b'{"a": 0}'),
         [
             'OBJECT_OPEN',
-            ('OBJECT_KEY', b'a'),
-            ('OBJECT_VALUE_NUMBER', b'0'),
+            ('OBJECT_KEY', 'a'),
+            ('OBJECT_VALUE_NUMBER', '0'),
             'OBJECT_CLOSE'
         ]
     )
@@ -139,8 +143,8 @@ def test_single_item_object_with_trailing_comma():
         parse(b'{"a": 0,}'),
         [
             'OBJECT_OPEN',
-            ('OBJECT_KEY', b'a'),
-            ('OBJECT_VALUE_NUMBER', b'0'),
+            ('OBJECT_KEY', 'a'),
+            ('OBJECT_VALUE_NUMBER', '0'),
             'OBJECT_CLOSE'
         ]
     )
@@ -151,32 +155,32 @@ def test_single_item_object_with_trailing_comma():
 
 def test_string_conversion():
     _assertEqual(
-        Parser.convert(None, 'STRING', (b't', b'e', b's', b't')),
-        b'test'
+        Parser.convert(None, 'STRING', ('t', 'e', 's', 't')),
+        'test'
     )
 
 def test_single_digit_conversion():
-    v = Parser.convert(None, 'NUMBER', (b'0',))
+    v = Parser.convert(None, 'NUMBER', ('0',))
     _assertIsInt(v)
     _assertEqual(v, 0)
 
 def test_double_digit_conversion():
-    v = Parser.convert(None, 'NUMBER', (b'13',))
+    v = Parser.convert(None, 'NUMBER', ('13',))
     _assertIsInt(v)
     _assertEqual(v, 13)
 
 def test_negative_digit_conversion():
-    v = Parser.convert(None, 'NUMBER', (b'-3',))
+    v = Parser.convert(None, 'NUMBER', ('-3',))
     _assertIsInt(v)
     _assertEqual(v, -3)
 
 def test_float_conversion():
-    v = Parser.convert(None, 'NUMBER', (b'3.1415',))
+    v = Parser.convert(None, 'NUMBER', ('3.1415',))
     _assertIsFloat(v)
     _assertEqual(v, 3.1415)
 
 def test_negative_float_conversion():
-    v = Parser.convert(None, 'NUMBER', (b'-3.1415',))
+    v = Parser.convert(None, 'NUMBER', ('-3.1415',))
     _assertIsFloat(v)
     _assertEqual(v, -3.1415)
 
@@ -198,10 +202,10 @@ def test_yield_paths():
     fh = open('test_data/api_weather_gov_points.json', 'rb')
     parser = Parser(fh)
     path = [
-        b'properties',
-        b'relativeLocation',
-        b'geometry',
-        b'coordinates',
+        'properties',
+        'relativeLocation',
+        'geometry',
+        'coordinates',
         1
     ]
     _assertEqual(list(parser.yield_paths((path,))), [(path, 41.50324)])

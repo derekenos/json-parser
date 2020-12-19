@@ -101,3 +101,6 @@ class UTF8Decoder:
             return self.REPLACEMENT_CHAR
 
         return chr(codepoint)
+
+    def read(self, num_bytes):
+        return ''.join(next(self) for _ in range(num_bytes))
