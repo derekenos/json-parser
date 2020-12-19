@@ -1,4 +1,6 @@
-""" Streaming UTF-8 Decoder
+"""
+Streaming UTF-8 Decoder
+See: https://en.wikipedia.org/wiki/UTF-8#Encoding
 """
 
 ###############################################################################
@@ -25,11 +27,13 @@ class InvalidUTF8Encoding(Exception):
 ###############################################################################
 
 class UTF8Decoder:
-    def __init__(self, stream, errors=STRICT):
+    def __init__(self, stream, errors=STRICT, disallow_nonchars=True):
         self.stream = stream
         self.byte_num = 0
         self.first_read = True
         self.errors = errors
+        self.num_pending_replacement = 0
+        self.disallow_nonchars = disallow_nonchars
 
     def read_one(self):
         c = self.stream.read(1)
@@ -47,16 +51,21 @@ class UTF8Decoder:
     def __iter__(self):
         return self
 
-    def error(self):
+    def error(self, num_consumed_bytes=1):
         if self.errors == STRICT:
             raise InvalidUTF8Encoding(self.byte_num)
         elif self.errors == REPLACE:
+            self.num_pending_replacement += num_consumed_bytes - 1
             return REPLACEMENT_CHAR
         else:
             return next(self)
 
     def __next__(self):
-        # See: https://en.wikipedia.org/wiki/UTF-8#Encoding
+        # If there are pending replacement chars, return one of those.
+        if self.num_pending_replacement > 0:
+            self.num_pending_replacement -= 1
+            return REPLACEMENT_CHAR
+
         # Read the next char.
         leading_byte = ord(self.read_one())
         # If the high bit is clear, return the single-byte char.
@@ -87,15 +96,15 @@ class UTF8Decoder:
             codepoint = (leading_byte & 0b00000001) << 30
         elif leading_byte & 0b11000000 == 0b10000000:
             # Unexpected continuation.
-            return self.error()
+            return self.error(1)
         else:
             # Some other unexpected condition.
-            return self.error()
+            return self.error(1)
 
         # Check whether the leading byte is 0xed which is reserved for
         # UTF-16 surrogate halves - whatever those are.
         if leading_byte == 0xed:
-            return self.error()
+            return self.error(1)
 
         # Read the remaining bytes, asserting that they're valid,
         # then shifting and ORing them with the codepoint.
@@ -105,14 +114,14 @@ class UTF8Decoder:
                 byte = ord(self.read_one())
             except StopIteration:
                 # Stream exhausted in the middle of a multi-byte char.
-                return self.error()
+                return self.error(num_bytes - bytes_remaining)
             # Check that this is a continuation byte.
             if byte & 0b11000000 != 0b10000000:
-                return self.error()
+                return self.error(num_bytes - bytes_remaining + 1)
             codepoint |= ((byte & 0b00111111) << ((bytes_remaining - 1) * 6))
             # Check whether the codepoint exceeds the unicode max.
             if num_bytes >= 4 and codepoint > MAX_CODEPOINT:
-                return self.error()
+                return self.error(num_bytes - bytes_remaining + 1)
             bytes_remaining -= 1
 
         # Disallow overlong encodings.
@@ -121,13 +130,20 @@ class UTF8Decoder:
             or num_bytes == 4 and codepoint < 0x10000
             or num_bytes == 5 and codepoint < 0x200000
             or num_bytes == 6 and codepoint < 0x4000000):
-            return self.error()
+            return self.error(num_bytes)
 
         # Check for other invalid values. See the Codepage Layout at:
         # https://en.wikipedia.org/wiki/UTF-8#Encoding
         if (leading_byte == 0xe0 and codepoint < 0x0800
             or leading_byte == 0xf0 and codepoint < 0x10000):
-            return self.error()
+            return self.error(num_bytes)
+
+        # Maybe disallow noncharacters.
+        # https://www.unicode.org/versions/corrigendum9.html
+        if (self.disallow_nonchars
+            and (codepoint >= 0xfffe or 0xfdd0 <= codepoint <= 0xfdef)):
+            # Replace disallowed non-chars with a single byte.
+            return self.error(1)
 
         return chr(codepoint)
 
