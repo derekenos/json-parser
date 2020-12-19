@@ -34,8 +34,26 @@ class UTF8Decoder:
         self.errors = errors
         self.num_pending_replacement = 0
         self.disallow_nonchars = disallow_nonchars
+        self.stuffed_byte = None
+
+    def __iter__(self):
+        return self
+
+    def stuff_byte(self, b):
+        # Assert that stuffed_byte is empty and write the byte to it.
+        if self.stuffed_byte is not None:
+            raise AssertionError
+        self.stuffed_byte = b
 
     def read_one(self):
+        # If a stuffed byte exists (which will happen if we encountered a
+        # non-leading/continuation byte when we were expecting one), return
+        # that.
+        if self.stuffed_byte is not None:
+            b = self.stuffed_byte
+            self.stuffed_byte = None
+            return b
+
         c = self.stream.read(1)
         self.byte_num += 1
 
@@ -47,9 +65,6 @@ class UTF8Decoder:
         if c == b'':
             raise StopIteration
         return c
-
-    def __iter__(self):
-        return self
 
     def error(self, num_consumed_bytes=1):
         if self.errors == STRICT:
@@ -117,6 +132,7 @@ class UTF8Decoder:
                 return self.error(num_bytes - bytes_remaining)
             # Check that this is a continuation byte.
             if byte & 0b11000000 != 0b10000000:
+                self.stuff_byte(chr(byte))
                 return self.error(num_bytes - bytes_remaining + 1)
             codepoint |= ((byte & 0b00111111) << ((bytes_remaining - 1) * 6))
             # Check whether the codepoint exceeds the unicode max.
