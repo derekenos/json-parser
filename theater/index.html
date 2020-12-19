@@ -7,6 +7,7 @@
     <script>
 
      const noop = () => null
+     const DEFAULT_URL = 'http://headers.jsontest.com/'
 
      function loadingEventHandler (url) {
        console.debug(`loading event handler called with: ${url}`)
@@ -81,9 +82,12 @@
           }
         })
 
-        // Attempt to parse the URL from pathname.
-        const url = window.location.pathname.slice(1)
+        // Attempt to parse the URL from pathname, otherwise set the URL
+        // input element to the default URL and return.
+        let url = window.location.pathname.slice(1)
         if (url.length === 0) {
+          urlInput.value = DEFAULT_URL
+          urlInput.focus()
           return
         }
         // Check that url looks like a URL.
