@@ -1,5 +1,5 @@
 
-from utf8_decoder.utf8_decoder import UTF8Decoder
+from utf8_decoder import UTF8Decoder
 
 ###############################################################################
 # Exceptions
