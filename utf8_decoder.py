@@ -1,9 +1,17 @@
+""" Streaming UTF-8 Decoder
+"""
 
 ###############################################################################
-# Streaming UTF-8 Decoder
+# Constants
 ###############################################################################
 
+REPLACEMENT_CHAR = '\ufffd'
 STRICT, REPLACE, IGNORE = 0, 1, 2
+MAX_CODEPOINT = 0x10ffff
+
+###############################################################################
+# Exceptions
+###############################################################################
 
 class InvalidUTF8Encoding(Exception):
     def __init__(self, byte_num):
@@ -12,10 +20,11 @@ class InvalidUTF8Encoding(Exception):
             'Invalid UTF-8 encoding at byte number: {}'.format(byte_num)
         )
 
-class UTF8Decoder:
-    REPLACEMENT_CHAR = '\ufffd'
-    MAX_CODEPOINT = 0x10FFFF
+###############################################################################
+# UTF8Decoder Class
+###############################################################################
 
+class UTF8Decoder:
     def __init__(self, stream, errors=STRICT):
         self.stream = stream
         self.byte_num = 0
@@ -42,63 +51,83 @@ class UTF8Decoder:
         if self.errors == STRICT:
             raise InvalidUTF8Encoding(self.byte_num)
         elif self.errors == REPLACE:
-            return self.REPLACEMENT_CHAR
+            return REPLACEMENT_CHAR
         else:
             return next(self)
 
     def __next__(self):
         # See: https://en.wikipedia.org/wiki/UTF-8#Encoding
         # Read the next char.
-        byte = ord(self.read_one())
+        leading_byte = ord(self.read_one())
         # If the high bit is clear, return the single-byte char.
-        if byte & 0b10000000 == 0:
-            return chr(byte)
+        if leading_byte & 0b10000000 == 0:
+            return chr(leading_byte)
         # The high bit is set so char comprises multiple bytes.
         # Determine the number of bytes and init the codepoint with
         # the first byte.
-        if byte & 0b11100000 == 0b11000000:
+        if leading_byte & 0b11100000 == 0b11000000:
             # 2-byte char.
-            bytes_remaining = 1
-            codepoint = (byte & 0b00011111) << 6
-        elif byte & 0b11110000 == 0b11100000:
+            num_bytes = 2
+            codepoint = (leading_byte & 0b00011111) << 6
+        elif leading_byte & 0b11110000 == 0b11100000:
             # 3-byte char.
-            bytes_remaining = 2
-            codepoint = (byte & 0b00001111) << 12
-        elif byte & 0b11111000 == 0b11110000:
+            num_bytes = 3
+            codepoint = (leading_byte & 0b00001111) << 12
+        elif leading_byte & 0b11111000 == 0b11110000:
             # 4-byte char.
-            bytes_remaining = 3
-            codepoint = (byte & 0b00000111) << 18
-        elif byte & 0b11111100 == 0b11111000:
+            num_bytes = 4
+            codepoint = (leading_byte & 0b00000111) << 18
+        elif leading_byte & 0b11111100 == 0b11111000:
             # 5-byte char.
-            bytes_remaining = 4
-            codepoint = (byte & 0b00000011) << 24
-        elif byte & 0b11111110 == 0b11111100:
+            num_bytes = 5
+            codepoint = (leading_byte & 0b00000011) << 24
+        elif leading_byte & 0b11111110 == 0b11111100:
             # 6-byte char.
-            bytes_remaining = 5
-            codepoint = (byte & 0b00000001) << 30
-        elif byte & 0b11000000 == 0b10000000:
+            num_bytes = 6
+            codepoint = (leading_byte & 0b00000001) << 30
+        elif leading_byte & 0b11000000 == 0b10000000:
             # Unexpected continuation.
             return self.error()
         else:
             # Some other unexpected condition.
             return self.error()
 
+        # Check whether the leading byte is 0xed which is reserved for
+        # UTF-16 surrogate halves - whatever those are.
+        if leading_byte == 0xed:
+            return self.error()
+
         # Read the remaining bytes, asserting that they're valid,
         # then shifting and ORing them with the codepoint.
+        bytes_remaining = num_bytes - 1
         while bytes_remaining:
             try:
                 byte = ord(self.read_one())
             except StopIteration:
                 # Stream exhausted in the middle of a multi-byte char.
-                self.error()
+                return self.error()
+            # Check that this is a continuation byte.
             if byte & 0b11000000 != 0b10000000:
-                self.error()
+                return self.error()
             codepoint |= ((byte & 0b00111111) << ((bytes_remaining - 1) * 6))
+            # Check whether the codepoint exceeds the unicode max.
+            if num_bytes >= 4 and codepoint > MAX_CODEPOINT:
+                return self.error()
             bytes_remaining -= 1
 
-        # Python only supports codepoints up to U+10FFFF
-        if codepoint > self.MAX_CODEPOINT:
-            return self.REPLACEMENT_CHAR
+        # Disallow overlong encodings.
+        if (num_bytes == 2 and codepoint < 0x80
+            or num_bytes == 3 and codepoint < 0x800
+            or num_bytes == 4 and codepoint < 0x10000
+            or num_bytes == 5 and codepoint < 0x200000
+            or num_bytes == 6 and codepoint < 0x4000000):
+            return self.error()
+
+        # Check for other invalid values. See the Codepage Layout at:
+        # https://en.wikipedia.org/wiki/UTF-8#Encoding
+        if (leading_byte == 0xe0 and codepoint < 0x0800
+            or leading_byte == 0xf0 and codepoint < 0x10000):
+            return self.error()
 
         return chr(codepoint)
 
