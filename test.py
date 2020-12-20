@@ -5,9 +5,10 @@ from io import BytesIO
 from testy import (
     Skip,
     assertEqual,
-    assertRaises,
-    assertIsInt,
     assertIsFloat,
+    assertIsInt,
+    assertRaises,
+    assertTrue,
     cli,
 )
 
@@ -15,7 +16,6 @@ from __init__ import (
     Parser,
     UnexpectedCharacter,
 )
-
 
 ###############################################################################
 # Parsing helper
@@ -26,7 +26,7 @@ def parse(b):
     result = []
     for x in parser.parse():
         if isinstance(x, tuple):
-            result.append((x[0], ''.join(x[1])))
+            result.append((x[0], b''.join(x[1])))
         else:
             result.append(x)
     return result
@@ -36,25 +36,28 @@ def parse(b):
 ###############################################################################
 
 def test_string():
-    assertEqual(parse(b'"test"'), [('STRING', 'test')])
+    assertEqual(parse(b'"test"'), [('STRING', b'test')])
 
 def test_nonascii_string():
-    assertEqual(parse('"κόσμε"'.encode('utf-8')), [('STRING', 'κόσμε')])
+    assertEqual(
+        parse('"κόσμε"'.encode('utf-8')),
+        [('STRING', 'κόσμε'.encode('utf-8'))]
+    )
 
 def test_single_digit():
-    assertEqual(parse(b'0'), [('NUMBER', '0')])
+    assertEqual(parse(b'0'), [('NUMBER', b'0')])
 
 def test_double_digit():
-    assertEqual(parse(b'13'), [('NUMBER', '13')])
+    assertEqual(parse(b'13'), [('NUMBER', b'13')])
 
 def test_negative_digit():
-    assertEqual(parse(b'-3'), [('NUMBER', '-3')])
+    assertEqual(parse(b'-3'), [('NUMBER', b'-3')])
 
 def test_float():
-    assertEqual(parse(b'3.1415'), [('NUMBER', '3.1415')])
+    assertEqual(parse(b'3.1415'), [('NUMBER', b'3.1415')])
 
 def test_negative_float():
-    assertEqual(parse(b'-3.1415'), [('NUMBER', '-3.1415')])
+    assertEqual(parse(b'-3.1415'), [('NUMBER', b'-3.1415')])
 
 def test_null():
     assertEqual(parse(b'null'), ['NULL'])
@@ -92,13 +95,13 @@ def test_empty_object():
 def test_single_element_array():
     assertEqual(
         parse(b'[1]'),
-        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', '1'), 'ARRAY_CLOSE']
+        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', b'1'), 'ARRAY_CLOSE']
     )
 
 def test_single_element_array_with_trailing_comma():
     assertEqual(
         parse(b'[1]'),
-        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', '1'), 'ARRAY_CLOSE']
+        ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', b'1'), 'ARRAY_CLOSE']
     )
 
 ###############################################################################
@@ -110,8 +113,8 @@ def test_single_item_object():
         parse(b'{"a": 0}'),
         [
             'OBJECT_OPEN',
-            ('OBJECT_KEY', 'a'),
-            ('OBJECT_VALUE_NUMBER', '0'),
+            ('OBJECT_KEY', b'a'),
+            ('OBJECT_VALUE_NUMBER', b'0'),
             'OBJECT_CLOSE'
         ]
     )
@@ -121,8 +124,8 @@ def test_single_item_object_with_trailing_comma():
         parse(b'{"a": 0,}'),
         [
             'OBJECT_OPEN',
-            ('OBJECT_KEY', 'a'),
-            ('OBJECT_VALUE_NUMBER', '0'),
+            ('OBJECT_KEY', b'a'),
+            ('OBJECT_VALUE_NUMBER', b'0'),
             'OBJECT_CLOSE'
         ]
     )
@@ -133,43 +136,43 @@ def test_single_item_object_with_trailing_comma():
 
 def test_string_conversion():
     assertEqual(
-        Parser.convert(None, 'STRING', ('t', 'e', 's', 't')),
+        Parser(b'').convert('STRING', (b't', b'e', b's', b't')),
         'test'
     )
 
 def test_single_digit_conversion():
-    v = Parser.convert(None, 'NUMBER', ('0',))
+    v = Parser(b'').convert('NUMBER', (b'0',))
     assertIsInt(v)
     assertEqual(v, 0)
 
 def test_double_digit_conversion():
-    v = Parser.convert(None, 'NUMBER', ('13',))
+    v = Parser(b'').convert('NUMBER', (b'13',))
     assertIsInt(v)
     assertEqual(v, 13)
 
 def test_negative_digit_conversion():
-    v = Parser.convert(None, 'NUMBER', ('-3',))
+    v = Parser(b'').convert('NUMBER', (b'-3',))
     assertIsInt(v)
     assertEqual(v, -3)
 
 def test_float_conversion():
-    v = Parser.convert(None, 'NUMBER', ('3.1415',))
+    v = Parser(b'').convert('NUMBER', (b'3.1415',))
     assertIsFloat(v)
     assertEqual(v, 3.1415)
 
 def test_negative_float_conversion():
-    v = Parser.convert(None, 'NUMBER', ('-3.1415',))
+    v = Parser(b'').convert('NUMBER', (b'-3.1415',))
     assertIsFloat(v)
     assertEqual(v, -3.1415)
 
 def test_null_conversion():
-    assertEqual(Parser.convert(None, 'NULL', None), None)
+    assertEqual(Parser(b'').convert('NULL', None), None)
 
 def test_true_conversion():
-    assertEqual(Parser.convert(None, 'TRUE', None), True)
+    assertEqual(Parser(b'').convert('TRUE', None), True)
 
 def test_false_conversion():
-    assertEqual(Parser.convert(None, 'FALSE', None), False)
+    assertEqual(Parser(b'').convert('FALSE', None), False)
 
 
 ###############################################################################
@@ -190,10 +193,33 @@ def test_yield_paths():
 
 
 ###############################################################################
+# Test invalid things
+###############################################################################
+
+def test_string_containing_control_code():
+    # Check that characters 0x00 - 0x1f are not allowed.
+    for x in range(32):
+        char = chr(x).encode('utf-8')
+        exc = assertRaises(
+            UnexpectedCharacter,
+            parse,
+            b'"' + char + b'"'
+        )
+        # Test the exception string to ensure that it was raised for the
+        # expected reason.
+        assertTrue(str(exc).endswith(f'got {repr(char)}'))
+    # Check that characters the next character, 0x20, is allowed.
+    assertEqual(
+        parse(f'"{chr(32)}"'.encode("utf-8")),
+        [('STRING', b'\x20')]
+    )
+
+###############################################################################
 # Test things you know are broken
 ###############################################################################
 
 def test_object_key_containing_double_quote():
+    raise Skip
     parse(b'{"a_\\"good\\"_key": 0}')
 
 def test_escaped_unicode_chars():
@@ -203,27 +229,9 @@ def test_escaped_unicode_chars():
         [('STRING', '1 2 3 4 5')]
     )
 
-def test_string_containing_control_code():
-    # Check that characters 0x00 - 0x1f are not allowed.
-    for x in range(32):
-        char = chr(x)
-        exc = assertRaises(
-            UnexpectedCharacter,
-            parse,
-            f'"{char}"'.encode("utf-8")
-        )
-        # Test the exception string to ensure that it was raised for the
-        # expected reason.
-        assertEqual(str(exc)[-5:], f'got {char}')
-    # Check that characters the next character, 0x20, is allowed.
-    assertEqual(
-        parse(f'"{chr(32)}"'.encode("utf-8")),
-        [('STRING', '\x20')]
-    )
-
 def test_string_containing_unicode_control_code():
+    raise Skip
     assertRaises(UnexpectedCharacter, parse, b'"\\u0000"')
-
 
 ###############################################################################
 

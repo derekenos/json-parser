@@ -1,6 +1,3 @@
-[submodule "utf8_decoder"]
-	path = utf8_decoder
-	url = https://github.com/derekenos/utf8_decoder.git
 [submodule "testy"]
 	path = testy
 	url = https://github.com/derekenos/testy.git

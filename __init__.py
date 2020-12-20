@@ -1,6 +1,4 @@
 
-from utf8_decoder import UTF8Decoder
-
 ###############################################################################
 # Exceptions
 ###############################################################################
@@ -16,7 +14,8 @@ class UnexpectedCharacter(Exception):
 # Constants
 ###############################################################################
 
-PERIOD = '.'
+PERIOD = b'.'
+NEGATIVE_SIGN = b'-'
 
 # Define the Parser.container_value_context_stack values.
 ARRAY_VALUE_CONTEXT = 'ARRAY_VALUE_CONTEXT'
@@ -30,19 +29,19 @@ OBJECT_VALUE_CONTEXT = 'OBJECT_VALUE_CONTEXT'
 # class a character belongs.
 ###############################################################################
 class Matchers:
-    OBJECT_OPEN = '{'
-    ARRAY_OPEN = '['
-    STRING_START = '"'
-    STRING_TERMINATOR = '"'
-    NULL_START = 'n'
-    TRUE_START = 't'
-    FALSE_START = 'f'
-    IS_NUMBER_START = lambda c: c == '-' or c.isdigit()
-    OBJECT_CLOSE = '}'
-    ARRAY_CLOSE = ']'
-    KV_SEP = ':'
-    ITEM_SEP = ','
-    EOF = ''
+    OBJECT_OPEN = b'{'
+    ARRAY_OPEN = b'['
+    STRING_START = b'"'
+    STRING_TERMINATOR = b'"'
+    NULL_START = b'n'
+    TRUE_START = b't'
+    FALSE_START = b'f'
+    IS_NUMBER_START = lambda c: c == NEGATIVE_SIGN or c.isdigit()
+    OBJECT_CLOSE = b'}'
+    ARRAY_CLOSE = b']'
+    KV_SEP = b':'
+    ITEM_SEP = b','
+    EOF = b''
 
 # Set derived matchers.
 # Create separate scalar / object / array matchers that use the same logic but
@@ -126,9 +125,8 @@ split_event_value = lambda x: (x if isinstance(x, tuple) else (x, None))
 
 class Parser:
     def __init__(self, stream, encoding='utf-8'):
-        if encoding != 'utf-8':
-            raise NotImplementedError('utf-8 is the only supported encoding')
-        self.stream = UTF8Decoder(stream)
+        self.stream = stream
+        self.encoding = encoding
 
         # Store the current stream char number for reporting the position of
         # unexpected characters.
@@ -148,7 +146,8 @@ class Parser:
 
         # Define a stack for storing the context of the current container-type
         # (i.e. object value or array value) that we're currently parsing. This
-        # is used in order to yield the appropriate event on array/object close.
+        # is used in order to yield the appropriate event on array/object
+        # close.
         self.container_value_context_stack = []
 
     def next_char(self):
@@ -189,9 +188,9 @@ class Parser:
         # Iterate through all tuple-type matchers.
         while isinstance(matcher, tuple):
             optional, matcher = matcher
-            # If the matcher doesn't look like a string (i.e. no 'encode'),
-            # assume it's a function and call it, other test again the string.
-            if ((not hasattr(optional, 'encode') and optional(c))
+            # If the matcher doesn't look like bytes (i.e. no 'decode'),
+            # assume it's a function and call it, other test against the bytes.
+            if ((not hasattr(optional, 'decode') and optional(c))
                 or c == optional):
                 # An optional matcher matched, so push the mandatory one back
                 # onto the expect_stack.
@@ -200,7 +199,7 @@ class Parser:
                 return c, optional
         # Either no optional matches were specified or none matched, so attempt
         # to match against the mandatory matcher.
-        if (not hasattr(matcher, 'encode') and matcher(c)) or c == matcher:
+        if (not hasattr(matcher, 'decode') and matcher(c)) or c == matcher:
             # Return the character and matched mandatory matcher.
             return c, matcher
         # The mandatory matcher failed, so raise UnexpectedCharacter.
@@ -245,7 +244,7 @@ class Parser:
     def parse_number(self):
         # Yield characters from the stream up until the next non-number char.
         # Expect the first character to be a negative sign or digit.
-        yield self.expect(lambda c: c == '-' or c.isdigit())[0]
+        yield self.expect(lambda c: c == NEGATIVE_SIGN or c.isdigit())[0]
         # Expect one or more digits.
         yield from self.yield_while(is_digit)
         # Check to see if the next char is a decimal point.
@@ -416,9 +415,9 @@ class Parser:
         elif c == Matchers.NULL_START:
             # Char is a null initiator (i.e. 'n')
             # Expect the next 3 chars to be 'ull' and yield the event.
-            self.expect('u')
-            self.expect('l')
-            self.expect('l')
+            self.expect(b'u')
+            self.expect(b'l')
+            self.expect(b'l')
             if match == Matchers.IS_OBJECT_VALUE_START:
                 yield Events.OBJECT_VALUE_NULL
             elif match == Matchers.IS_ARRAY_VALUE_START:
@@ -429,9 +428,9 @@ class Parser:
         elif c == Matchers.TRUE_START:
             # Char is a true initiator (i.e. 't')
             # Expect the next 3 chars to be 'rue' and yield the event.
-            self.expect('r')
-            self.expect('u')
-            self.expect('e')
+            self.expect(b'r')
+            self.expect(b'u')
+            self.expect(b'e')
             if match == Matchers.IS_OBJECT_VALUE_START:
                 yield Events.OBJECT_VALUE_TRUE
             elif match == Matchers.IS_ARRAY_VALUE_START:
@@ -442,10 +441,10 @@ class Parser:
         elif c == Matchers.FALSE_START:
             # Char is a false initiator (i.e. 'f')
             # Expect the next 4 chars to be 'alse' and yield the event.
-            self.expect('a')
-            self.expect('l')
-            self.expect('s')
-            self.expect('e')
+            self.expect(b'a')
+            self.expect(b'l')
+            self.expect(b's')
+            self.expect(b'e')
             if match == Matchers.IS_OBJECT_VALUE_START:
                 yield Events.OBJECT_VALUE_FALSE
             elif match == Matchers.IS_ARRAY_VALUE_START:
@@ -487,11 +486,11 @@ class Parser:
             or event == Events.OBJECT_VALUE_STRING
             or event == Events.STRING
             or event == Events.OBJECT_KEY):
-            return ''.join(value)
+            return b''.join(value).decode(self.encoding)
         if (event == Events.ARRAY_VALUE_NUMBER
             or event == Events.OBJECT_VALUE_NUMBER
             or event == Events.NUMBER):
-            s = ''.join(value)
+            s = b''.join(value)
             # Cast to either float or int based on presence of a decimal place.
             return float(s) if PERIOD in s else int(s)
         raise NotImplementedError(event, value)
