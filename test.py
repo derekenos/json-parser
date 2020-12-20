@@ -3,7 +3,7 @@
 from io import BytesIO
 from sys import stdout
 
-from jsonite import (
+from __init__ import (
     Parser,
     UnexpectedCharacter,
 )
