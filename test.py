@@ -1,42 +1,20 @@
 # -*- coding: utf-8 -*-
 
 from io import BytesIO
-from sys import stdout
+
+from testy import (
+    Skip,
+    assertEqual,
+    assertRaises,
+    assertIsInt,
+    assertIsFloat,
+    cli,
+)
 
 from __init__ import (
     Parser,
     UnexpectedCharacter,
 )
-
-###############################################################################
-# Testing helpers
-###############################################################################
-
-class Skip(Exception): pass
-class DidNotRaise(Exception): pass
-
-def _assertEqual(result, expected):
-    if result != expected:
-        raise AssertionError(
-            f'Expected ({repr(expected)}), got ({repr(result)})'
-        )
-
-def _assertRaises(exc, fn, *args, **kwargs):
-    try:
-        fn(*args, **kwargs)
-    except exc:
-        pass
-    else:
-        raise DidNotRaise
-
-def _assertIsInstance(v, cls):
-    if not isinstance(v, cls):
-        raise AssertionError(
-            f'Value ({repr(value)}) is not of type ({repr(cls)})'
-        )
-
-_assertIsInt = lambda v: _assertIsInstance(v, int)
-_assertIsFloat = lambda v: _assertIsInstance(v, float)
 
 
 ###############################################################################
@@ -58,34 +36,34 @@ def parse(b):
 ###############################################################################
 
 def test_string():
-    _assertEqual(parse(b'"test"'), [('STRING', 'test')])
+    assertEqual(parse(b'"test"'), [('STRING', 'test')])
 
 def test_nonascii_string():
-    _assertEqual(parse('"κόσμε"'.encode('utf-8')), [('STRING', 'κόσμε')])
+    assertEqual(parse('"κόσμε"'.encode('utf-8')), [('STRING', 'κόσμε')])
 
 def test_single_digit():
-    _assertEqual(parse(b'0'), [('NUMBER', '0')])
+    assertEqual(parse(b'0'), [('NUMBER', '0')])
 
 def test_double_digit():
-    _assertEqual(parse(b'13'), [('NUMBER', '13')])
+    assertEqual(parse(b'13'), [('NUMBER', '13')])
 
 def test_negative_digit():
-    _assertEqual(parse(b'-3'), [('NUMBER', '-3')])
+    assertEqual(parse(b'-3'), [('NUMBER', '-3')])
 
 def test_float():
-    _assertEqual(parse(b'3.1415'), [('NUMBER', '3.1415')])
+    assertEqual(parse(b'3.1415'), [('NUMBER', '3.1415')])
 
 def test_negative_float():
-    _assertEqual(parse(b'-3.1415'), [('NUMBER', '-3.1415')])
+    assertEqual(parse(b'-3.1415'), [('NUMBER', '-3.1415')])
 
 def test_null():
-    _assertEqual(parse(b'null'), ['NULL'])
+    assertEqual(parse(b'null'), ['NULL'])
 
 def test_true():
-    _assertEqual(parse(b'true'), ['TRUE'])
+    assertEqual(parse(b'true'), ['TRUE'])
 
 def test_false():
-    _assertEqual(parse(b'false'), ['FALSE'])
+    assertEqual(parse(b'false'), ['FALSE'])
 
 
 ###############################################################################
@@ -93,7 +71,7 @@ def test_false():
 ###############################################################################
 
 def test_number_containing_multiple_numeric_chars():
-    _assertRaises(UnexpectedCharacter, parse, b'-3.14.-1-5')
+    assertRaises(UnexpectedCharacter, parse, b'-3.14.-1-5')
 
 
 ###############################################################################
@@ -101,10 +79,10 @@ def test_number_containing_multiple_numeric_chars():
 ###############################################################################
 
 def test_empty_array():
-    _assertEqual(parse(b'[]'), ['ARRAY_OPEN', 'ARRAY_CLOSE'])
+    assertEqual(parse(b'[]'), ['ARRAY_OPEN', 'ARRAY_CLOSE'])
 
 def test_empty_object():
-    _assertEqual(parse(b'{}'), ['OBJECT_OPEN', 'OBJECT_CLOSE'])
+    assertEqual(parse(b'{}'), ['OBJECT_OPEN', 'OBJECT_CLOSE'])
 
 
 ###############################################################################
@@ -112,13 +90,13 @@ def test_empty_object():
 ###############################################################################
 
 def test_single_element_array():
-    _assertEqual(
+    assertEqual(
         parse(b'[1]'),
         ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', '1'), 'ARRAY_CLOSE']
     )
 
 def test_single_element_array_with_trailing_comma():
-    _assertEqual(
+    assertEqual(
         parse(b'[1]'),
         ['ARRAY_OPEN', ('ARRAY_VALUE_NUMBER', '1'), 'ARRAY_CLOSE']
     )
@@ -128,7 +106,7 @@ def test_single_element_array_with_trailing_comma():
 ###############################################################################
 
 def test_single_item_object():
-    _assertEqual(
+    assertEqual(
         parse(b'{"a": 0}'),
         [
             'OBJECT_OPEN',
@@ -139,7 +117,7 @@ def test_single_item_object():
     )
 
 def test_single_item_object_with_trailing_comma():
-    _assertEqual(
+    assertEqual(
         parse(b'{"a": 0,}'),
         [
             'OBJECT_OPEN',
@@ -154,44 +132,44 @@ def test_single_item_object_with_trailing_comma():
 ###############################################################################
 
 def test_string_conversion():
-    _assertEqual(
+    assertEqual(
         Parser.convert(None, 'STRING', ('t', 'e', 's', 't')),
         'test'
     )
 
 def test_single_digit_conversion():
     v = Parser.convert(None, 'NUMBER', ('0',))
-    _assertIsInt(v)
-    _assertEqual(v, 0)
+    assertIsInt(v)
+    assertEqual(v, 0)
 
 def test_double_digit_conversion():
     v = Parser.convert(None, 'NUMBER', ('13',))
-    _assertIsInt(v)
-    _assertEqual(v, 13)
+    assertIsInt(v)
+    assertEqual(v, 13)
 
 def test_negative_digit_conversion():
     v = Parser.convert(None, 'NUMBER', ('-3',))
-    _assertIsInt(v)
-    _assertEqual(v, -3)
+    assertIsInt(v)
+    assertEqual(v, -3)
 
 def test_float_conversion():
     v = Parser.convert(None, 'NUMBER', ('3.1415',))
-    _assertIsFloat(v)
-    _assertEqual(v, 3.1415)
+    assertIsFloat(v)
+    assertEqual(v, 3.1415)
 
 def test_negative_float_conversion():
     v = Parser.convert(None, 'NUMBER', ('-3.1415',))
-    _assertIsFloat(v)
-    _assertEqual(v, -3.1415)
+    assertIsFloat(v)
+    assertEqual(v, -3.1415)
 
 def test_null_conversion():
-    _assertEqual(Parser.convert(None, 'NULL', None), None)
+    assertEqual(Parser.convert(None, 'NULL', None), None)
 
 def test_true_conversion():
-    _assertEqual(Parser.convert(None, 'TRUE', None), True)
+    assertEqual(Parser.convert(None, 'TRUE', None), True)
 
 def test_false_conversion():
-    _assertEqual(Parser.convert(None, 'FALSE', None), False)
+    assertEqual(Parser.convert(None, 'FALSE', None), False)
 
 
 ###############################################################################
@@ -208,7 +186,7 @@ def test_yield_paths():
         'coordinates',
         1
     ]
-    _assertEqual(list(parser.yield_paths((path,))), [(path, 41.50324)])
+    assertEqual(list(parser.yield_paths((path,))), [(path, 41.50324)])
 
 
 ###############################################################################
@@ -216,30 +194,38 @@ def test_yield_paths():
 ###############################################################################
 
 def test_object_key_containing_double_quote():
-    raise Skip
     parse(b'{"a_\\"good\\"_key": 0}')
+
+def test_escaped_unicode_chars():
+    raise Skip
+    assertEqual(
+        parse(b'"1 \\u0032 \\u0033 4 \\u0035"'),
+        [('STRING', '1 2 3 4 5')]
+    )
+
+def test_string_containing_control_code():
+    # Check that characters 0x00 - 0x1f are not allowed.
+    for x in range(32):
+        char = chr(x)
+        exc = assertRaises(
+            UnexpectedCharacter,
+            parse,
+            f'"{char}"'.encode("utf-8")
+        )
+        # Test the exception string to ensure that it was raised for the
+        # expected reason.
+        assertEqual(str(exc)[-5:], f'got {char}')
+    # Check that characters the next character, 0x20, is allowed.
+    assertEqual(
+        parse(f'"{chr(32)}"'.encode("utf-8")),
+        [('STRING', '\x20')]
+    )
+
+def test_string_containing_unicode_control_code():
+    assertRaises(UnexpectedCharacter, parse, b'"\\u0000"')
+
 
 ###############################################################################
 
-def run_tests():
-    # Run all global functions with a name that starts with "test_".
-    fn_cls = type(run_tests)
-    for k, v in sorted(globals().items()):
-        if k.startswith('test_') and isinstance(v, fn_cls):
-            test_name = v.__name__[5:]
-            stdout.write('testing {}'.format(test_name))
-            stdout.flush()
-            try:
-                v()
-            except AssertionError as e:
-                stdout.write(' - FAILED\n')
-                raise
-            except Skip:
-                stdout.write(' - SKIPPED\n')
-            else:
-                stdout.write(' - ok\n')
-            finally:
-                stdout.flush()
-
 if __name__ == '__main__':
-    run_tests()
+    cli(globals())
