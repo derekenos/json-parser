@@ -9,10 +9,6 @@
      const noop = () => null
      const DEFAULT_URL = 'http://headers.jsontest.com/'
 
-     function loadingEventHandler (url) {
-       console.debug(`loading event handler called with: ${url}`)
-     }
-
      function showEventInStream (event, payload) {
        // Display the event in the event-stream textarea.
        const el = document.getElementById("event-stream")
@@ -30,40 +26,43 @@
      }
 
      function translateMatcher(matcher) {
-       if (matcher.length === 1) {
-         return matcher === "" ? "END_OF_FILE" : `"${matcher}"`
+       if (matcher === "") {
+         return "END_OF_FILE"
+       } else if (matcher.length === 1) {
+         return matcher
        } else {
          // Trim the "IS_" prefix.
          return matcher.slice(3)
        }
      }
 
-     function expectStackEventHandler(expect_stack) {
+     function expectStackEventHandler(expectStack) {
+       // Show this event in the stream.
+       showEventInStream("EXPECT_STACK", expectStack)
+
        // Updated the parser-expects element.
        const el = document.getElementById("parser-expects")
-       const matcher = expect_stack[expect_stack.length - 1]
+       const matcher = expectStack[expectStack.length - 1]
 
        if (typeof matcher === "string") {
          el.textContent = translateMatcher(matcher)
        } else {
-         el.textContent = `${translateMatcher(matcher[0])} or ${translateMatcher(matcher[1])}`
+         el.textContent =
+           `${translateMatcher(matcher[0])} or ${translateMatcher(matcher[1])}`
        }
      }
 
      const EVENT_HANDLERS = new Map([
-       ["MESSAGE", noop],
-       ["ERROR", noop],
-       ["LOADING", loadingEventHandler],
-       ["NEXT_CHAR", nextCharEventHandler],
-       ["PARSE", noop],
+       ["ERROR", x => showEventInStream("ERROR", x)],
        ["EXPECT_STACK", expectStackEventHandler],
+       ["LOADING", x => showEventInStream("LOADING", x)],
+       ["MESSAGE", x => showEventInStream("MESSAGE", x)],
+       ["NEXT_CHAR", nextCharEventHandler],
+       ["PARSE", x => showEventInStream("PARSE", x)],
      ])
 
      function playEventHandler (msg) {
        const [ event, payload ] = JSON.parse(msg.data)
-       if (event !== "NEXT_CHAR") {
-         showEventInStream(event, payload)
-       }
        if (!EVENT_HANDLERS.has(event)) {
          console.error(`No event handler defined for ${event}`)
          return

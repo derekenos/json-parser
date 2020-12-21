@@ -9,7 +9,7 @@ from http.server import (
     BaseHTTPRequestHandler,
 )
 
-from jsonite import (
+from __init__ import (
     Matchers,
     Parser,
     split_event_value,
@@ -18,9 +18,11 @@ from jsonite import (
 INDEX_HTML_PATH = 'theater/index.html'
 
 class InstrumentedExpectStack(list):
-    def __init__(self, old_expect_stack, send):
+    def __init__(self, old_expect_stack, send, encoding):
         super().__init__(old_expect_stack)
         self.send = send
+        self.encoding = encoding
+        self.send('EXPECT_STACK', self.to_payload())
 
     def append(self, v):
         super().append(v)
@@ -28,13 +30,12 @@ class InstrumentedExpectStack(list):
 
     def pop(self):
         v = super().pop()
-        self.send('EXPECT_STACK', self.to_payload())
         return v
 
     def decode_matcher(self, matcher):
         if not isinstance(matcher, FunctionType):
-            # Matcher is a string.
-            return matcher
+            # Matcher is a byte string.
+            return matcher.decode(self.encoding)
         # Matcher is a function.
         for k, v in Matchers.__dict__.items():
             if matcher == v:
@@ -53,21 +54,26 @@ class InstrumentedParser(Parser):
     def __init__(self, stream, send):
         super().__init__(stream)
         self.send = send
-        self.expect_stack = InstrumentedExpectStack(self.expect_stack, send)
+        self.expect_stack = InstrumentedExpectStack(self.expect_stack, send,
+                                                    self.encoding)
 
     def next_char(self):
         # Check wether any character is stuff, cause we already send'd it.
         any_stuffed = self.stuffed_char is not None
         c = super().next_char()
         if not any_stuffed:
-            self.send('NEXT_CHAR', c)
-            sleep(0.1)
+            self.send('NEXT_CHAR', c.decode(self.encoding))
         return c
 
 def get_send(socket):
     def send (event, payload=None):
         data = bytes(f'data: {dumps([event, payload])}\n\n', encoding='utf-8')
         socket.write(data)
+        # Sleep after certain messages.
+        if event == 'NEXT_CHAR':
+            sleep(0.1)
+        elif event == 'EXPECT_STACK':
+            sleep(1)
     return send
 
 def fetch_data(url):
@@ -86,7 +92,7 @@ def player(send, url):
         return
 
     # Instantiate the parser.
-    send('MESSAGE', 'Instantiating jsonite.Parser')
+    send('MESSAGE', 'Instantiating Parser')
     parser = InstrumentedParser(data, send)
 
     try:
@@ -99,6 +105,7 @@ def player(send, url):
                 send('PARSE', [event, value])
     except Exception as e:
         send('ERROR', str(e))
+    send('MESSAGE', 'Done')
 
 
 class RequestHandler(BaseHTTPRequestHandler):
