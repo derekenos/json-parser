@@ -12,7 +12,8 @@
      function showEventInStream (event, payload) {
        // Display the event in the event-stream textarea.
        const el = document.getElementById("event-stream")
-       el.value += `\n[${Date.now()}] ${event} ${JSON.stringify(payload)}`
+       el.value +=
+         `\n[${Date.now()}] ${event} ${payload !== undefined ? JSON.stringify(payload) : ""}`
        // Scroll to the bottom.
        el.scrollTop = el.scrollHeight - el.clientHeight;
      }
@@ -52,10 +53,16 @@
        }
      }
 
+     function doneEventHandler () {
+       showEventInStream("DONE")
+       document.getElementById("parser-expects").textContent = 'nothing'
+     }
+
      const EVENT_HANDLERS = new Map([
+       ["DONE", doneEventHandler],
        ["ERROR", x => showEventInStream("ERROR", x)],
        ["EXPECT_STACK", expectStackEventHandler],
-       ["LOADING", x => showEventInStream("LOADING", x)],
+       ["MATCHED", x => showEventInStream("MATCHED", x)],
        ["MESSAGE", x => showEventInStream("MESSAGE", x)],
        ["NEXT_CHAR", nextCharEventHandler],
        ["PARSE", x => showEventInStream("PARSE", x)],

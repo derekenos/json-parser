@@ -17,6 +17,26 @@ from __init__ import (
 
 INDEX_HTML_PATH = 'theater/index.html'
 
+def stringify_matcher(matcher, encoding):
+    # Convert a matcher byte string or function to unicode.
+    if not isinstance(matcher, FunctionType):
+        # Matcher is a byte string.
+        return matcher.decode(encoding)
+    # Matcher is a function.
+    for k, v in Matchers.__dict__.items():
+        if matcher == v:
+            return k
+    raise AssertionError
+
+def stringify_expect_stack_item(item, encoding):
+    # Convert expect stack element to unicode.
+    if not isinstance(item, tuple):
+        return stringify_matcher(item, encoding)
+    return (
+        stringify_matcher(item[0], encoding),
+        stringify_expect_stack_item(item[1], encoding)
+    )
+
 class InstrumentedExpectStack(list):
     def __init__(self, old_expect_stack, send, encoding):
         super().__init__(old_expect_stack)
@@ -32,23 +52,8 @@ class InstrumentedExpectStack(list):
         v = super().pop()
         return v
 
-    def decode_matcher(self, matcher):
-        if not isinstance(matcher, FunctionType):
-            # Matcher is a byte string.
-            return matcher.decode(self.encoding)
-        # Matcher is a function.
-        for k, v in Matchers.__dict__.items():
-            if matcher == v:
-                return k
-        raise AssertionError
-
-    def convert_expect_value(self, v):
-        if not isinstance(v, tuple):
-            return self.decode_matcher(v)
-        return (self.decode_matcher(v[0]), self.convert_expect_value(v[1]))
-
     def to_payload(self):
-        return list(map(self.convert_expect_value, self))
+        return [stringify_expect_stack_item(x, self.encoding) for x in self]
 
 class InstrumentedParser(Parser):
     def __init__(self, stream, send):
@@ -65,15 +70,20 @@ class InstrumentedParser(Parser):
             self.send('NEXT_CHAR', c.decode(self.encoding))
         return c
 
+    def expect(self, matcher):
+        c, matcher = super().expect(matcher)
+        self.send('MATCHED', stringify_matcher(matcher, self.encoding))
+        return c, matcher
+
 def get_send(socket):
     def send (event, payload=None):
         data = bytes(f'data: {dumps([event, payload])}\n\n', encoding='utf-8')
         socket.write(data)
         # Sleep after certain messages.
         if event == 'NEXT_CHAR':
-            sleep(0.1)
+            sleep(0)
         elif event == 'EXPECT_STACK':
-            sleep(1)
+            sleep(.5)
     return send
 
 def fetch_data(url):
@@ -104,8 +114,10 @@ def player(send, url):
                 value = parser.convert(event, value)
                 send('PARSE', [event, value])
     except Exception as e:
+        # DEBUG
+        raise
         send('ERROR', str(e))
-    send('MESSAGE', 'Done')
+    send('DONE')
 
 
 class RequestHandler(BaseHTTPRequestHandler):
