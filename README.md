@@ -37,15 +37,15 @@ parser = Parser(fh)
     ```
     ...
     gen = parser.yield_paths((
-        [ b'@context', 0 ],
-        [ b'@context', 1, b'@version' ]
+        [ '@context', 0 ],
+        [ '@context', 1, '@version' ]
     ))
 
     next(gen)
-    # ([b'@context', 0], b'https://geojson.org/geojson-ld/geojson-context.jsonld')
+    # (['@context', 0], 'https://geojson.org/geojson-ld/geojson-context.jsonld')
 
     next(gen)
-    # ([b'@context', 1, b'@version'], b'1.1')
+    # (['@context', 1, '@version'], '1.1')
     ```
 
 ## CLI
