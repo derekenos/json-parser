@@ -25,7 +25,7 @@ OBJECT_VALUE_CONTEXT = 'OBJECT_VALUE_CONTEXT'
 # Matchers
 #
 # Matchers are character strings or predicate functions that are used to both
-# test whether a character is as expected and serve as an indicator of to which
+# test whether a character is as expected and serve as an indicator as to which
 # class a character belongs.
 ###############################################################################
 class Matchers:
@@ -189,7 +189,8 @@ class Parser:
         while isinstance(matcher, tuple):
             optional, matcher = matcher
             # If the matcher doesn't look like bytes (i.e. no 'decode'),
-            # assume it's a function and call it, other test against the bytes.
+            # assume it's a function and call it, otherwise test against the
+            # byte literal.
             if ((not hasattr(optional, 'decode') and optional(c))
                 or c == optional):
                 # An optional matcher matched, so push the mandatory one back
@@ -261,13 +262,18 @@ class Parser:
         yield from self.yield_while(is_digit)
 
     def parse(self):
+        # Parse self.stream by calling parse_next(), yielding each event, until
+        # it returns None which indicates that the stream has been exhausted.
         while True:
             for event_value in self.parse_next():
                 if event_value is None:
+                    # EOF has been reached
                     return
                 yield event_value
 
     def parse_next(self):
+        # Call expect() with the next item from the expect_stack.
+        # character matches.
         c, match = self.expect(self.expect_stack.pop())
 
         if match == Matchers.EOF:
