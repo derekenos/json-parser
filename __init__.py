@@ -188,11 +188,9 @@ class Parser:
         # Iterate through all tuple-type matchers.
         while isinstance(matcher, tuple):
             optional, matcher = matcher
-            # If the matcher doesn't look like bytes (i.e. no 'decode'),
-            # assume it's a function and call it, otherwise test against the
+            # If the matcher is callable, call it, otherwise test against the
             # byte literal.
-            if ((not hasattr(optional, 'decode') and optional(c))
-                or c == optional):
+            if (callable(optional) and optional(c)) or c == optional:
                 # An optional matcher matched, so push the mandatory one back
                 # onto the expect_stack.
                 self.expect_stack.append(matcher)
@@ -200,7 +198,7 @@ class Parser:
                 return c, optional
         # Either no optional matches were specified or none matched, so attempt
         # to match against the mandatory matcher.
-        if (not hasattr(matcher, 'decode') and matcher(c)) or c == matcher:
+        if (callable(matcher) and matcher(c)) or c == matcher:
             # Return the character and matched mandatory matcher.
             return c, matcher
         # The mandatory matcher failed, so raise UnexpectedCharacter.
@@ -755,8 +753,8 @@ if __name__ == '__main__':
     arg_parser.add_argument('--action', choices=('load', 'parse'),
                             default="load")
     arg_parser.add_argument('--path', type=str, action='append',
-                            help='Dot-delimited path specifier with dots in keys escaped as a double-dot')
-
+                            help='Dot-delimited path specifier with dots in '\
+                            'keys escaped as a double-dot')
     args = arg_parser.parse_args()
 
     if args.string:
