@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import json
 from io import BytesIO
 
 from testy import (
@@ -222,21 +223,36 @@ def test_string_containing_control_code():
 ###############################################################################
 
 def test_object_key_containing_double_quote():
-    raise Skip
     parse(b'{"a_\\"good\\"_key": 0}')
 
 def test_escaped_unicode_chars():
-    raise Skip
     assertEqual(
         parse(b'"1 \\u0032 \\u0033 4 \\u0035"'),
         [('STRING', '1 2 3 4 5')]
     )
 
 def test_string_containing_unicode_control_code():
-    raise Skip
     assertRaises(UnexpectedCharacter, parse, b'"\\u0000"')
 
 ###############################################################################
+# Test parity with built-in Python json.load()
+###############################################################################
+
+def test_parity_with_builtin_json_load_github_repos():
+    _open = lambda: open('test_data/api_github_com_users_github_repos.json',
+                         'rb')
+    assertEqual(
+        json.load(_open()),
+        Parser(_open()).load()
+    )
+
+def test_parity_with_builtin_json_load_weather_data():
+    _open = lambda: open('test_data/api_weather_gov_points.json', 'rb')
+    assertEqual(
+        json.load(_open()),
+        Parser(_open()).load()
+    )
+
 
 if __name__ == '__main__':
     cli(globals())
