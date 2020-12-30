@@ -260,19 +260,16 @@ class Parser:
         while True:
             # Get the next event.
             event, value_gen, expect = self.next_event()
-
             # If event is EOF, we've reached the end of the stream.
             if event is Events.EOF:
                 return
-
-            # Temporarily yield scalar or tuple for backwad compat.
+            # Temporarily yield scalar or tuple for backward compatibility.
             yield event if value_gen is None else (event, value_gen)
-
-            # Drain any unconsumed value_gen items.
+            # If the value generator hasn't been fully consumed, drain it.
             if value_gen is not None:
                 for _ in value_gen:
                     pass
-
+            # If next_event() returned something to expect next, push it.
             if expect is not None:
                 self.expect_stack.append(expect)
 
@@ -282,13 +279,11 @@ class Parser:
           ( <event>, <value-generator-or-None>, <expected-next-or-None> )
         """
         # Call expect() with the next item from the expect_stack.
-        # character matches.
         c, matcher = self.expect(self.expect_stack.pop())
 
         if matcher == Matchers.EOF:
             # Char is an empty string which indicates that the input stream has
             # been exhausted.
-            # Yield None to indicate that end-of-file has been reached.
             return Events.EOF, None, None
 
         if c == Matchers.ARRAY_OPEN:
@@ -385,12 +380,14 @@ class Parser:
 
         if c == Matchers.STRING_START:
             # Char is a string initiator (i.e. '"')
-            # Yield the event along with a string value parser/generator.
+            # Return the event along with a string value parser/generator.
             if matcher == Matchers.IS_OBJECT_VALUE_START:
                 event = Events.OBJECT_VALUE_STRING
+                # Maybe expect an object item separator next.
                 expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
             elif matcher == Matchers.IS_ARRAY_VALUE_START:
                 event = Events.ARRAY_VALUE_STRING
+                # Maybe expect an array item separator next.
                 expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
                 event = Events.STRING
@@ -399,12 +396,14 @@ class Parser:
 
         if Matchers.IS_NUMBER_START(c):
             # Char is a number initiator (i.e. '-' or a digit)
-            # Yield the event along with a number value parser/generator.
+            # Return the event along with a number value parser/generator.
             if matcher == Matchers.IS_OBJECT_VALUE_START:
                 event = Events.OBJECT_VALUE_NUMBER
+                # Maybe expect an object item separator next.
                 expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
             elif matcher == Matchers.IS_ARRAY_VALUE_START:
                 event = Events.ARRAY_VALUE_NUMBER
+                # Maybe expect an array item separator next.
                 expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
                 event = Events.NUMBER
@@ -415,16 +414,17 @@ class Parser:
             return event, self.parse_number(), expect
 
         if c == Matchers.NULL_START:
-            # Char is a null initiator (i.e. 'n')
-            # Expect the next 3 chars to be 'ull' and yield the event.
+            # Char is a null initiator (i.e. 'n'), expect the remaining chars.
             self.expect(b'u')
             self.expect(b'l')
             self.expect(b'l')
             if matcher == Matchers.IS_OBJECT_VALUE_START:
                 event = Events.OBJECT_VALUE_NULL
+                # Maybe expect an object item separator next.
                 expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
             elif matcher == Matchers.IS_ARRAY_VALUE_START:
                 event = Events.ARRAY_VALUE_NULL
+                # Maybe expect an array item separator next.
                 expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
                 event = Events.NULL
@@ -432,16 +432,17 @@ class Parser:
             return event, None, expect
 
         if c == Matchers.TRUE_START:
-            # Char is a true initiator (i.e. 't')
-            # Expect the next 3 chars to be 'rue' and yield the event.
+            # Char is a true initiator (i.e. 't'), expect the remaining chars.
             self.expect(b'r')
             self.expect(b'u')
             self.expect(b'e')
             if matcher == Matchers.IS_OBJECT_VALUE_START:
                 event = Events.OBJECT_VALUE_TRUE
+                # Maybe expect an object item separator next.
                 expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
             elif matcher == Matchers.IS_ARRAY_VALUE_START:
                 event = Events.ARRAY_VALUE_TRUE
+                # Maybe expect an array item separator next.
                 expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
                 event = Events.TRUE
@@ -449,23 +450,25 @@ class Parser:
             return event, None, expect
 
         if c == Matchers.FALSE_START:
-            # Char is a false initiator (i.e. 'f')
-            # Expect the next 4 chars to be 'alse' and yield the event.
+            # Char is a false initiator (i.e. 'f'), expect the remaining chars.
             self.expect(b'a')
             self.expect(b'l')
             self.expect(b's')
             self.expect(b'e')
             if matcher == Matchers.IS_OBJECT_VALUE_START:
                 event = Events.OBJECT_VALUE_FALSE
+                # Maybe expect an object item separator next.
                 expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
             elif matcher == Matchers.IS_ARRAY_VALUE_START:
                 event = Events.ARRAY_VALUE_FALSE
+                # Maybe expect an array item separator next.
                 expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
                 event = Events.FALSE
                 expect = None
             return event, None, expect
 
+        # Something went wrong :shrug:
         raise AssertionError(c, matcher)
 
     def convert(self, event, value):
