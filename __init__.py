@@ -87,6 +87,7 @@ Matchers.IS_OBJECT_ITEM_SEP = IS_OBJECT_ITEM_SEP
 
 class Events:
     ARRAY_CLOSE = 'ARRAY_CLOSE'
+    ARRAY_ITEM_SEP = 'ARRAY_ITEM_SEP'
     ARRAY_OPEN = 'ARRAY_OPEN'
     ARRAY_VALUE_FALSE = 'ARRAY_VALUE_FALSE'
     ARRAY_VALUE_NULL = 'ARRAY_VALUE_NULL'
@@ -95,9 +96,11 @@ class Events:
     ARRAY_VALUE_TRUE = 'ARRAY_VALUE_TRUE'
     EOF = 'END_OF_FILE'
     FALSE = 'FALSE'
+    KV_SEP = 'KV_SEP'
     NULL = 'NULL'
     NUMBER = 'NUMBER'
     OBJECT_CLOSE = 'OBJECT_CLOSE'
+    OBJECT_ITEM_SEP = 'OBJECT_ITEM_SEP'
     OBJECT_KEY = 'OBJECT_KEY'
     OBJECT_OPEN = 'OBJECT_OPEN'
     OBJECT_VALUE_FALSE = 'OBJECT_VALUE_FALSE'
@@ -221,15 +224,6 @@ class Parser:
             # Yield the character.
             yield c
 
-    def with_drain(self, event, gen):
-        # Yield the specified (event, gen) pair and afterward, if necessary,
-        # consume the generator to ensure that the stream read pointer is
-        # advanced as expected.
-        yield event, gen
-        if gen is not None:
-            for _ in gen:
-                pass
-
     def parse_string(self):
         # Yield characters from the stream up until the next string terminator
         # (i.e. '"') character.
@@ -262,217 +256,217 @@ class Parser:
         yield from self.yield_while(is_digit)
 
     def parse(self):
-        # Parse self.stream by calling parse_next(), yielding each event, until
-        # it returns None which indicates that the stream has been exhausted.
+        # Start parsing self.stream.
         while True:
-            for event_value in self.parse_next():
-                if event_value is None:
-                    # EOF has been reached
-                    return
-                yield event_value
+            # Get the next event.
+            event, value_gen, expect = self.next_event()
 
-    def parse_next(self):
+            # If event is EOF, we've reached the end of the stream.
+            if event is Events.EOF:
+                return
+
+            # Temporarily yield scalar or tuple for backwad compat.
+            yield event if value_gen is None else (event, value_gen)
+
+            # Drain any unconsumed value_gen items.
+            if value_gen is not None:
+                for _ in value_gen:
+                    pass
+
+            if expect is not None:
+                self.expect_stack.append(expect)
+
+    def next_event(self):
+        """Attempt to match the next stream character to what's on the top of
+        the expect stack and return a tuple in the format:
+          ( <event>, <value-generator-or-None>, <expected-next-or-None> )
+        """
         # Call expect() with the next item from the expect_stack.
         # character matches.
-        c, match = self.expect(self.expect_stack.pop())
+        c, matcher = self.expect(self.expect_stack.pop())
 
-        if match == Matchers.EOF:
+        if matcher == Matchers.EOF:
             # Char is an empty string which indicates that the input stream has
             # been exhausted.
             # Yield None to indicate that end-of-file has been reached.
-            yield None
-            return
+            return Events.EOF, None, None
 
         if c == Matchers.ARRAY_OPEN:
-            # Char is an array initiator (i.e. '[')
-            yield Events.ARRAY_OPEN
-            # Expect an array value, item separator, or array terminator to
-            # follow.
-            self.expect_stack.append(
-                (Matchers.IS_ARRAY_VALUE_START, Matchers.ARRAY_CLOSE)
-            )
+            # Char is an array initiator (i.e. '[').
             # If the context is array or object, push the appropriate value
             # onto the container_value_context_stack.
-            if match == Matchers.IS_ARRAY_VALUE_START:
+            if matcher == Matchers.IS_ARRAY_VALUE_START:
                 self.container_value_context_stack.append(ARRAY_VALUE_CONTEXT)
-            elif match == Matchers.IS_OBJECT_VALUE_START:
+            elif matcher == Matchers.IS_OBJECT_VALUE_START:
                 self.container_value_context_stack.append(OBJECT_VALUE_CONTEXT)
-            return
+            # Expect an array terminator (which is already on the stack) to
+            # follow.
+            return (
+                Events.ARRAY_OPEN,
+                None,
+                (Matchers.IS_ARRAY_VALUE_START, Matchers.ARRAY_CLOSE)
+            )
 
         if c == Matchers.OBJECT_OPEN:
             # Char is an object initiator (i.e. '{')
-            yield Events.OBJECT_OPEN
-            # Expect an object key, item separator, or object terminator to
-            # follow.
-            self.expect_stack.append(
-                (Matchers.IS_OBJECT_KEY_START, Matchers.OBJECT_CLOSE)
-            )
             # If the context is array or object, push the appropriate value
             # onto the container_value_context_stack.
-            if match == Matchers.IS_ARRAY_VALUE_START:
+            if matcher == Matchers.IS_ARRAY_VALUE_START:
                 self.container_value_context_stack.append(ARRAY_VALUE_CONTEXT)
-            elif match == Matchers.IS_OBJECT_VALUE_START:
+            elif matcher == Matchers.IS_OBJECT_VALUE_START:
                 self.container_value_context_stack.append(OBJECT_VALUE_CONTEXT)
-            return
+            # Expect an object key, item separator, or object terminator (which
+            # is already on the stack) to follow.
+            return (
+                Events.OBJECT_OPEN,
+                None,
+                (Matchers.IS_OBJECT_KEY_START, Matchers.OBJECT_CLOSE)
+            )
 
-        if match == Matchers.ARRAY_CLOSE:
+        if matcher == Matchers.ARRAY_CLOSE:
             # Char is an array terminator (i.e. ']')
-            yield Events.ARRAY_CLOSE
             # If container_value_context_stack is non-empty, pop the last
-            # context.
+            # context and expect whatever's appropriate to follow.
+            expect = None
             if self.container_value_context_stack:
                 context = self.container_value_context_stack.pop()
-                # Expect whatever's appropriate for the context.
                 item_sep_matcher = (
-                    Matchers.IS_ARRAY_ITEM_SEP if context == ARRAY_VALUE_CONTEXT
+                    Matchers.IS_ARRAY_ITEM_SEP
+                    if context == ARRAY_VALUE_CONTEXT
                     else Matchers.IS_OBJECT_ITEM_SEP
                 )
-                self.expect_stack.append(
-                    (item_sep_matcher, self.expect_stack.pop())
-                )
-            return
+                expect = (item_sep_matcher, self.expect_stack.pop())
+            return Events.ARRAY_CLOSE, None, expect
 
-        if match == Matchers.OBJECT_CLOSE:
+        if matcher == Matchers.OBJECT_CLOSE:
             # Char is an object terminator (i.e. '}').
-            yield Events.OBJECT_CLOSE
             # If container_value_context_stack is non-empty, pop the last
-            # context.
+            # context and expect whatever's appropriate to follow.
+            expect = None
             if self.container_value_context_stack:
                 context = self.container_value_context_stack.pop()
-                # Expect whatever's appropriate for the context.
                 item_sep_matcher = (
-                    Matchers.IS_ARRAY_ITEM_SEP if context == ARRAY_VALUE_CONTEXT
+                    Matchers.IS_ARRAY_ITEM_SEP
+                    if context == ARRAY_VALUE_CONTEXT
                     else Matchers.IS_OBJECT_ITEM_SEP
                 )
-                self.expect_stack.append(
-                    (item_sep_matcher, self.expect_stack.pop())
-                )
-            return
+                expect = (item_sep_matcher, self.expect_stack.pop())
+            return Events.OBJECT_CLOSE, None, expect
 
-        if match == Matchers.IS_OBJECT_KEY_START:
+        if matcher == Matchers.IS_OBJECT_KEY_START:
             # Char is the expected object key's opening double-qoute.
-            # Yield the object key string.
-            yield from self.with_drain(Events.OBJECT_KEY, self.parse_string())
             # Expect a object key/value separator (i.e. ':') to follow.
-            self.expect_stack.append(Matchers.KV_SEP)
-            return
+            return Events.OBJECT_KEY, self.parse_string(), Matchers.KV_SEP
 
-        if match == Matchers.KV_SEP:
+        if matcher == Matchers.KV_SEP:
             # Char is an object key / value separator (i.e. ':')
             # Expect an object value (e.g. string, number, null) to follow.
-            self.expect_stack.append(Matchers.IS_OBJECT_VALUE_START)
-            return
+            return Events.KV_SEP, None, Matchers.IS_OBJECT_VALUE_START
 
-        if match == Matchers.IS_OBJECT_ITEM_SEP:
+        if matcher == Matchers.IS_OBJECT_ITEM_SEP:
             # Char is an item separator (i.e. ',') in a post-object-value
-            # context.
-            # Expect an object value, item separator (thus accomodating
-            # unlimited trailing commas), or object terminator to follow.
-            self.expect_stack.append(
+            # context. Expect an object key or object terminator (which is
+            # already on the stack) to follow.
+            return (
+                Events.OBJECT_ITEM_SEP,
+                None,
                 (Matchers.IS_OBJECT_KEY_START, self.expect_stack.pop())
             )
-            return
 
-        if match == Matchers.IS_ARRAY_ITEM_SEP:
+        if matcher == Matchers.IS_ARRAY_ITEM_SEP:
             # Char is an item separator (i.e. ',') in a post-array-value
-            # context.
-            # Expect an array value, item separator (thus accomodating
+            # context. Expect an array value, item separator (thus accomodating
             # unlimited trailing commas), or array terminator to follow.
-            self.expect_stack.append(
+            return (
+                Events.ARRAY_ITEM_SEP,
+                None,
                 (Matchers.IS_ARRAY_VALUE_START, self.expect_stack.pop())
             )
-            return
-
-        # Having exhausted the above clauses, we find ourselves dealing with a
-        # new scalar value, either as a standalone value or in the context of an
-        # array or object value. Assert that this is so.
-        if match not in (
-                Matchers.IS_VALUE_START,
-                Matchers.IS_OBJECT_VALUE_START,
-                Matchers.IS_ARRAY_VALUE_START
-            ):
-            raise AssertionError(c, match, self.char_num)
 
         if c == Matchers.STRING_START:
             # Char is a string initiator (i.e. '"')
             # Yield the event along with a string value parser/generator.
-            if match == Matchers.IS_OBJECT_VALUE_START:
+            if matcher == Matchers.IS_OBJECT_VALUE_START:
                 event = Events.OBJECT_VALUE_STRING
-            elif match == Matchers.IS_ARRAY_VALUE_START:
+                expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
+            elif matcher == Matchers.IS_ARRAY_VALUE_START:
                 event = Events.ARRAY_VALUE_STRING
+                expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
                 event = Events.STRING
-            yield from self.with_drain(event, self.parse_string())
+                expect = None
+            return event, self.parse_string(), expect
 
-        elif Matchers.IS_NUMBER_START(c):
+        if Matchers.IS_NUMBER_START(c):
             # Char is a number initiator (i.e. '-' or a digit)
             # Yield the event along with a number value parser/generator.
-            if match == Matchers.IS_OBJECT_VALUE_START:
+            if matcher == Matchers.IS_OBJECT_VALUE_START:
                 event = Events.OBJECT_VALUE_NUMBER
-            elif match == Matchers.IS_ARRAY_VALUE_START:
+                expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
+            elif matcher == Matchers.IS_ARRAY_VALUE_START:
                 event = Events.ARRAY_VALUE_NUMBER
+                expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
                 event = Events.NUMBER
+                expect = None
             # parse_number() is going to need this first character, so stuff it
             # back in.
             self.stuff_char(c)
-            yield from self.with_drain(event, self.parse_number())
+            return event, self.parse_number(), expect
 
-        elif c == Matchers.NULL_START:
+        if c == Matchers.NULL_START:
             # Char is a null initiator (i.e. 'n')
             # Expect the next 3 chars to be 'ull' and yield the event.
             self.expect(b'u')
             self.expect(b'l')
             self.expect(b'l')
-            if match == Matchers.IS_OBJECT_VALUE_START:
-                yield Events.OBJECT_VALUE_NULL
-            elif match == Matchers.IS_ARRAY_VALUE_START:
-                yield Events.ARRAY_VALUE_NULL
+            if matcher == Matchers.IS_OBJECT_VALUE_START:
+                event = Events.OBJECT_VALUE_NULL
+                expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
+            elif matcher == Matchers.IS_ARRAY_VALUE_START:
+                event = Events.ARRAY_VALUE_NULL
+                expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
-                yield Events.NULL
+                event = Events.NULL
+                expect = None
+            return event, None, expect
 
-        elif c == Matchers.TRUE_START:
+        if c == Matchers.TRUE_START:
             # Char is a true initiator (i.e. 't')
             # Expect the next 3 chars to be 'rue' and yield the event.
             self.expect(b'r')
             self.expect(b'u')
             self.expect(b'e')
-            if match == Matchers.IS_OBJECT_VALUE_START:
-                yield Events.OBJECT_VALUE_TRUE
-            elif match == Matchers.IS_ARRAY_VALUE_START:
-                yield Events.ARRAY_VALUE_TRUE
+            if matcher == Matchers.IS_OBJECT_VALUE_START:
+                event = Events.OBJECT_VALUE_TRUE
+                expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
+            elif matcher == Matchers.IS_ARRAY_VALUE_START:
+                event = Events.ARRAY_VALUE_TRUE
+                expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
-                yield Events.TRUE
+                event = Events.TRUE
+                expect = None
+            return event, None, expect
 
-        elif c == Matchers.FALSE_START:
+        if c == Matchers.FALSE_START:
             # Char is a false initiator (i.e. 'f')
             # Expect the next 4 chars to be 'alse' and yield the event.
             self.expect(b'a')
             self.expect(b'l')
             self.expect(b's')
             self.expect(b'e')
-            if match == Matchers.IS_OBJECT_VALUE_START:
-                yield Events.OBJECT_VALUE_FALSE
-            elif match == Matchers.IS_ARRAY_VALUE_START:
-                yield Events.ARRAY_VALUE_FALSE
+            if matcher == Matchers.IS_OBJECT_VALUE_START:
+                event = Events.OBJECT_VALUE_FALSE
+                expect = Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop()
+            elif matcher == Matchers.IS_ARRAY_VALUE_START:
+                event = Events.ARRAY_VALUE_FALSE
+                expect = Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop()
             else:
-                yield Events.FALSE
+                event = Events.FALSE
+                expect = None
+            return event, None, expect
 
-        else:
-            raise NotImplementedError(c)
-
-        if match == Matchers.IS_ARRAY_VALUE_START:
-            # We just yielded an array value.
-            # Expect an array item separator or array terminator to follow.
-            self.expect_stack.append(
-                (Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop())
-            )
-        elif match == Matchers.IS_OBJECT_VALUE_START:
-            # We just yielded an object value.
-            # Expect an object item separator or object terminator to follow.
-            self.expect_stack.append(
-                (Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop())
-            )
+        raise AssertionError(c, matcher)
 
     def convert(self, event, value):
         # Convert a parsed value to a Python type.

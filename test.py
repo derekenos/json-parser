@@ -114,6 +114,7 @@ def test_single_item_object():
         [
             'OBJECT_OPEN',
             ('OBJECT_KEY', b'a'),
+            'KV_SEP',
             ('OBJECT_VALUE_NUMBER', b'0'),
             'OBJECT_CLOSE'
         ]
@@ -125,7 +126,9 @@ def test_single_item_object_with_trailing_comma():
         [
             'OBJECT_OPEN',
             ('OBJECT_KEY', b'a'),
+            'KV_SEP',
             ('OBJECT_VALUE_NUMBER', b'0'),
+            'OBJECT_ITEM_SEP',
             'OBJECT_CLOSE'
         ]
     )
