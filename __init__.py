@@ -117,9 +117,6 @@ class Events:
 
 is_digit = lambda c: c.isdigit()
 
-def is_not_string_terminator(c):
-    return c != Matchers.STRING_TERMINATOR
-
 split_event_value = lambda x: (x if isinstance(x, tuple) else (x, None))
 
 ###############################################################################
@@ -227,14 +224,14 @@ class Parser:
     def parse_string(self):
         # Yield characters from the stream up until the next string terminator
         # (i.e. '"') character.
-        for c in self.yield_while(is_not_string_terminator):
+        while True:
+            c = self.next_char()
+            if c == Matchers.STRING_TERMINATOR:
+                return
             # Disallow control characters.
-            if ord(c) <= 0x1f:
-                raise UnexpectedCharacter(c, self.char_num,
-                                          is_not_string_terminator)
+            if c[0] <= 0x1f:
+                raise UnexpectedCharacter(c, self.char_num, 'NOT_CONTROL_CHAR')
             yield c
-        # Expect a string terminator to follow.
-        self.expect(Matchers.STRING_TERMINATOR)
 
     def parse_number(self):
         # Yield characters from the stream up until the next non-number char.
