@@ -25,11 +25,11 @@ from __init__ import (
 def parse(b):
     parser = Parser(BytesIO(b))
     result = []
-    for x in parser.parse():
-        if isinstance(x, tuple):
-            result.append((x[0], b''.join(x[1])))
+    for event, value_gen in parser.parse():
+        if value_gen is not None:
+            result.append((event, b''.join(value_gen)))
         else:
-            result.append(x)
+            result.append(event)
     return result
 
 ###############################################################################

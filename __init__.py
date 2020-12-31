@@ -258,9 +258,9 @@ class Parser:
             # If event is EOF, we've reached the end of the stream.
             if event is Events.EOF:
                 return
-            # Temporarily yield scalar or tuple for backward compatibility.
-            yield event if value_gen is None else (event, value_gen)
-            # If the value generator hasn't been fully consumed, drain it.
+            # Yield the event and any value generator.
+            yield event, value_gen
+            # If a value generator hasn't been fully consumed, drain it.
             if value_gen is not None:
                 for _ in value_gen:
                     pass
