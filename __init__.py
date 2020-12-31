@@ -117,8 +117,6 @@ class Events:
 
 is_digit = lambda c: c.isdigit()
 
-split_event_value = lambda x: (x if isinstance(x, tuple) else (x, None))
-
 ###############################################################################
 # Parser
 ###############################################################################
@@ -509,8 +507,7 @@ class Parser:
         # Define the current path stack.
         path = []
         parse_gen = self.parse()
-        for event_value in parse_gen:
-            event, value = split_event_value(event_value)
+        for event, value in parse_gen:
             if event == Events.OBJECT_OPEN:
                 # An object has opened.
                 # If the current path node is an array index, increment it.
@@ -620,7 +617,7 @@ class Parser:
             parse_gen = self.parse()
 
         # Initialize the value based on the first read.
-        event, value = split_event_value(next(parse_gen))
+        event, value = next(parse_gen)
 
         # If it's a single scalar value, convert and return it.
         if (event == Events.STRING
@@ -671,8 +668,7 @@ class Parser:
             key = self.convert(event, value)
 
         # Start parsing.
-        for event_value in parse_gen:
-            event, value = split_event_value(event_value)
+        for event, value in parse_gen:
             if event == Events.ARRAY_OPEN:
                 # An array just opened so open a new list container.
                 open_container([])
@@ -798,8 +794,7 @@ if __name__ == '__main__':
             print(dumps(result, indent=2))
 
     elif args.action == 'parse':
-        for event_value in parser.parse():
-            event, value = split_event_value(event_value)
+        for event, value in parser.parse():
             if value is not None:
                 value = parser.convert(event, value)
             print(event, value)
