@@ -1,4 +1,4 @@
-i# json-parser
+# json-parser
 
 A hilarious foray into the world of streaming parsers. I laughed, I cried, it took a day.
 
@@ -106,6 +106,6 @@ ARRAY_CLOSE None
 
 ## Parser Theater
 
-Running `python3 theater.py` will launch a local web server/application that provides a UI for obersving the parser in action. It could use a lot more features, but I'm toying with the idea of turning this web server + app framework + visibility / control of instrumented Python object into its own project.
+Running `python3 theater.py` will launch a local web server/application that provides a UI for obersving the parser in action. I can imagine many more features and am toying with the idea of turning this web server + app framework + visibility / control of instrumented Python object into its own project.
 
 ![parser-theater](https://user-images.githubusercontent.com/585182/103412551-a64eb480-4b43-11eb-977a-de483f0f7022.gif)
