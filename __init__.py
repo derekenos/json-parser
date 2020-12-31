@@ -371,20 +371,6 @@ class Parser:
                 (Matchers.IS_ARRAY_VALUE_START, self.expect_stack.pop())
             )
 
-
-        if match == Matchers.IS_ARRAY_VALUE_START:
-            # We're about to yield an array value.
-            # Expect an array item separator or array terminator to follow.
-            self.expect_stack.append(
-                (Matchers.IS_ARRAY_ITEM_SEP, self.expect_stack.pop())
-            )
-        elif match == Matchers.IS_OBJECT_VALUE_START:
-            # We're about to yield an object value.
-            # Expect an object item separator or object terminator to follow.
-            self.expect_stack.append(
-                (Matchers.IS_OBJECT_ITEM_SEP, self.expect_stack.pop())
-            )
-
         if c == Matchers.STRING_START:
             # Char is a string initiator (i.e. '"')
             # Return the event along with a string value parser/generator.

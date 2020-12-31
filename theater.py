@@ -12,7 +12,6 @@ from http.server import (
 from __init__ import (
     Matchers,
     Parser,
-    split_event_value,
 )
 
 INDEX_HTML_PATH = 'theater/index.html'
@@ -106,8 +105,7 @@ def player(send, url):
     parser = InstrumentedParser(data, send)
 
     try:
-        for event_value in parser.parse():
-            event, value = split_event_value(event_value)
+        for event, value in parser.parse():
             if value is None:
                 send('PARSE', event)
             else:
