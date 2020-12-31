@@ -1,4 +1,4 @@
-# jsonite
+i# json-parser
 
 A hilarious foray into the world of streaming parsers. I laughed, I cried, it took a day.
 
@@ -13,7 +13,7 @@ I recently [made my own AAA battery holder](https://photos.google.com/share/AF1Q
 1. Instantiate the `Parser` with a binary stream
 
 ```
-from jsonite import Parser
+from __init__ import Parser
 
 fh = open('test_data/api_weather_gov_points.json', 'rb')
 parser = Parser(fh)
@@ -51,8 +51,8 @@ parser = Parser(fh)
 ## CLI
 
 ```
-$ python3 jsonite.py --help
-usage: jsonite.py [-h] [--file FILE | --string STRING] [--action {load,parse}]
+$ python3 __init__.py --help
+usage: __init__.py [-h] [--file FILE | --string STRING] [--action {load,parse}]
                   [--path PATH]
 
 optional arguments:
@@ -69,7 +69,7 @@ You must specify either `--file=<file-path>` or `--string='<some-json>'`, and th
 #### String loading example
 
 ```
-python3 jsonite.py --string='[1, 2, {"three": 4}]' --action=load
+python3 __init__.py --string='[1, 2, {"three": 4}]' --action=load
 ```
 output:
 ```
@@ -79,7 +79,7 @@ output:
 #### String w/ specific path loading example
 
 ```
-python3 jsonite.py --string='[1, 2, {"three": 4}]' --path 2.three
+python3 __init__.py --string='[1, 2, {"three": 4}]' --path 2.three
 ```
 output:
 ```
@@ -90,7 +90,7 @@ output:
 
 #### String parsing example
 ```
-python3 jsonite.py --string='[1, 2, {"three": 4}]' --action=parse
+python3 __init__.py --string='[1, 2, {"three": 4}]' --action=parse
 ```
 output:
 ```
@@ -103,3 +103,9 @@ OBJECT_VALUE_NUMBER 4
 OBJECT_CLOSE None
 ARRAY_CLOSE None
 ```
+
+## Parser Theater
+
+Running `python3 theater.py` will launch a local web server/application that provides a UI for obersving the parser in action. It could use a lot more features, but I'm toying with the idea of turning this web server + app framework + visibility / control of instrumented Python object into its own project.
+
+![parser-theater](https://user-images.githubusercontent.com/585182/103412551-a64eb480-4b43-11eb-977a-de483f0f7022.gif)

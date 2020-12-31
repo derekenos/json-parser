@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+
+    <script>
+
+     const noop = () => null
+     const DEFAULT_URL = 'http://headers.jsontest.com/'
+
+     function showEventInStream (event, payload) {
+       // Display the event in the event-stream textarea.
+       const el = document.getElementById("event-stream")
+       el.value +=
+         `\n[${Date.now()}] ${event} ${payload !== undefined ? JSON.stringify(payload) : ""}`
+       // Scroll to the bottom.
+       el.scrollTop = el.scrollHeight - el.clientHeight;
+     }
+
+     function nextCharEventHandler(char) {
+       // Append the char to the data display area.
+       const el = document.getElementById("data")
+       el.value += char
+       // Scroll to the bottom.
+       el.scrollTop = el.scrollHeight - el.clientHeight;
+     }
+
+     function translateMatcher(matcher) {
+       if (matcher === "") {
+         return "END_OF_FILE"
+       } else if (matcher.length === 1) {
+         return matcher
+       } else {
+         // Trim the "IS_" prefix.
+         return matcher.slice(3)
+       }
+     }
+
+     function expectStackEventHandler(expectStack) {
+       // Show this event in the stream.
+       showEventInStream("EXPECT_STACK", expectStack)
+
+       // Updated the parser-expects element.
+       const el = document.getElementById("parser-expects")
+       const matcher = expectStack[expectStack.length - 1]
+
+       if (typeof matcher === "string") {
+         el.textContent = translateMatcher(matcher)
+       } else {
+         el.textContent =
+           `${translateMatcher(matcher[0])} or ${translateMatcher(matcher[1])}`
+       }
+     }
+
+     function doneEventHandler () {
+       showEventInStream("DONE")
+       document.getElementById("parser-expects").textContent = 'nothing'
+     }
+
+     const EVENT_HANDLERS = new Map([
+       ["DONE", doneEventHandler],
+       ["ERROR", x => showEventInStream("ERROR", x)],
+       ["EXPECT_STACK", expectStackEventHandler],
+       ["MATCHED", x => showEventInStream("MATCHED", x)],
+       ["MESSAGE", x => showEventInStream("MESSAGE", x)],
+       ["NEXT_CHAR", nextCharEventHandler],
+       ["PARSE", x => showEventInStream("PARSE", x)],
+     ])
+
+     function playEventHandler (msg) {
+       const [ event, payload ] = JSON.parse(msg.data)
+       if (!EVENT_HANDLERS.has(event)) {
+         console.error(`No event handler defined for ${event}`)
+         return
+       }
+       // Invoke the event handler with the payload.
+       EVENT_HANDLERS.get(event)(payload)
+     }
+
+      function init () {
+        const urlInput = document.getElementById("url")
+
+        // Add URL keydown handler.
+        urlInput.addEventListener("keydown", e => {
+          if (e.key === "Enter") {
+            window.location.pathname = `/${e.target.value}`
+          }
+        })
+
+        // Attempt to parse the URL from pathname, otherwise set the URL
+        // input element to the default URL and return.
+        let url = window.location.pathname.slice(1)
+        if (url.length === 0) {
+          urlInput.value = DEFAULT_URL
+          urlInput.focus()
+          return
+        }
+        // Check that url looks like a URL.
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          console.warn(`The specified URL is not valid: ${url}`)
+          return
+        }
+        // Set the URL input value.
+        urlInput.value = url
+        // Init the event stream.
+        new EventSource(`/play/${url}`).onmessage = playEventHandler
+      }
+      document.addEventListener("DOMContentLoaded", () => init())
+    </script>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: arial;
+      }
+
+     h1, h2 {
+       width: 100%;
+       color: #fff;
+       padding: 0.2rem 1rem;
+       font-size: 1.2rem;
+     }
+
+     h1 {
+       margin: 0;
+       background-color: #888;
+     }
+
+     h2 {
+       margin: 0.2rem 0;
+       background-color: #555599;
+     }
+
+     textarea {
+       border: none;
+       width: 100%;
+       margin: 0;
+       padding-bottom: 1rem;
+     }
+
+      #top-bar {
+        padding: 1rem;
+        background-color: #222266;
+        color: #fff;
+        font-variant: small-caps;
+        font-weight: bold;
+        letter-spacing: 0.1rem;
+      }
+
+      #url {
+        width: 50%;
+        border-radius: 8px;
+        padding: 0.5rem;
+      }
+
+     #event-stream {
+       height: 16rem;
+
+     }
+
+     #parser-expects {
+       font-size: .9rem;
+       margin-left: 1rem;
+       letter-spacing: .2rem;
+     }
+
+     #data {
+       height: 16rem;
+     }
+    </style>
+  </head>
+
+  <body>
+    <div id="top-bar">
+      <label for="url">url</label>
+      <input id="url" type="text" name="url"
+             placeholder="Enter the URL of some JSON data and hit ENTER"
+             size="64">
+    </div>
+    <h1>Event Stream</h1>
+    <textarea id="event-stream"></textarea>
+    <h2>Parser Expects: <span id="parser-expects"></span></h2>
+    <h1>Read Progress</h1>
+    <textarea id="data"></textarea>
+  </body>
+
+</html>
