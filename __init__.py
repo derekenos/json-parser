@@ -293,7 +293,7 @@ class Parser:
             if expect is not None:
                 self.expect_stack.append(expect)
             # Yield control.
-            asyncio.sleep(0)
+            await asyncio.sleep(0)
 
     def next_event(self):
         """Attempt to match the next stream character to what's on the top of
@@ -538,7 +538,7 @@ class Parser:
         parse_gen = self.parse()
         async for event, value in parse_gen:
             # Yield control.
-            asyncio.sleep(0)
+            await asyncio.sleep(0)
             if event == Events.OBJECT_OPEN:
                 # An object has opened.
                 # If the current path node is an array index, increment it.
@@ -657,7 +657,7 @@ class Parser:
             or event == Events.TRUE
             or event == Events.FALSE):
             # Yield control.
-            asyncio.sleep(0)
+            await asyncio.sleep(0)
             return self.convert(event, value)
 
         # Create an initial, root object to represent the initial container.
@@ -736,7 +736,7 @@ class Parser:
                 # current object container.
                 container[key] = self.convert(event, value)
             # Yield control.
-            asyncio.sleep(0)
+            await asyncio.sleep(0)
 
         # Return the mutated root object.
         return root
