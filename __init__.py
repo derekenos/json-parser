@@ -2,6 +2,31 @@
 import uasyncio as asyncio
 
 ###############################################################################
+# AsyncGenerator Class
+###############################################################################
+
+class AsyncGenerator:
+    def __init__(self, gen):
+        self.gen = gen
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        v = await self.next()
+        if v is not None:
+            return v
+        else:
+            raise StopAsyncIteration
+
+    async def next(self):
+        await asyncio.sleep(0.1)
+        try:
+            return next(self.gen)
+        except StopIteration:
+            return None
+
+###############################################################################
 # Exceptions
 ###############################################################################
 
@@ -276,6 +301,11 @@ class Parser:
         yield from self.yield_while(is_digit)
 
     async def parse(self):
+        """AsyncGenerator parse() wrapper.
+        """
+        return AsyncGenerator(self._parse())
+
+    async def _parse(self):
         # Start parsing self.stream.
         while True:
             # Get the next event.
@@ -292,8 +322,6 @@ class Parser:
             # If next_event() returned something to expect next, push it.
             if expect is not None:
                 self.expect_stack.append(expect)
-            # Yield control.
-            await asyncio.sleep(0)
 
     def next_event(self):
         """Attempt to match the next stream character to what's on the top of
@@ -521,6 +549,11 @@ class Parser:
         raise NotImplementedError(event, value)
 
     async def yield_paths(self, paths):
+        """AsyncGenerator yield_paths() wrapper.
+        """
+        return AsyncGenerator(self._yield_paths(paths))
+
+    async def _yield_paths(self, paths):
         # Yield ( <path>, <value-generator> ) tuples for all specified paths
         # that exist in the data.
         #
@@ -645,7 +678,7 @@ class Parser:
         # otherwise parse the entire stream, and return a single Python object,
         # similar to the built-in json.load() / json.loads() behavior.
         if parse_gen is None:
-            parse_gen = self.parse()
+            parse_gen = await self.parse()
 
         # Initialize the value based on the first read.
         event, value = await parse_gen.__anext__()
