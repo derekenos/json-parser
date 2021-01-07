@@ -549,12 +549,20 @@ class Parser:
             return float(s) if PERIOD in s else int(s)
         raise NotImplementedError(event, value)
 
-    def yield_paths(self, paths):
-        """AsyncGenerator yield_paths() wrapper.
-        """
-        return AsyncGenerator(self._yield_paths(paths))
+    async def load_paths(self, paths):
+        path_loader = self.path_loader(paths)
+        path_loader.send(None)
+        parse_gen = self.parse()
+        parse_gen_gen = parse_gen.gen
+        data = {}
+        async for event, value in parse_gen:
+            item = path_loader.send((event, value, parse_gen_gen))
+            if item is not None:
+                k, v = item
+                data[convert_yielded_key_to_dot_path(k)] = v
+        return data
 
-    def _yield_paths(self, paths):
+    def path_loader(self, paths):
         # Yield ( <path>, <value-generator> ) tuples for all specified paths
         # that exist in the data.
         #
@@ -569,8 +577,10 @@ class Parser:
         unyielded_path_idxs = set(range(len(paths)))
         # Define the current path stack.
         path = []
-        parse_gen = self._parse()
-        for event, value in parse_gen:
+        item = None
+        while True:
+            event, value, parse_gen = yield item
+            item = None
             if event == Events.OBJECT_OPEN:
                 # An object has opened.
                 # If the current path node is an array index, increment it.
@@ -582,24 +592,20 @@ class Parser:
                 yielded = False
                 for i in unyielded_path_idxs:
                     if path == paths[i]:
-                        # Reset the parser state such that the next call will
-                        # re-yield this same OBJECT_OPEN to make load() work.
-                        yield path, self.load(parse_gen)
                         unyielded_path_idxs.remove(i)
-                        yielded = True
-                        break
+                        item = path, self.load(parse_gen)
                 if not yielded:
                     # If this container was not already load()ed and yielded,
                     # Append an empty object indicator to the current path, to
                     # be overwritten by the next parsed key.
-                    path.append(PERIOD)
-                continue
+                    # Use literal unicode period instead of PERIOD (which is a
+                    # bytestring) so that path is homogenous.
+                    path.append('.')
 
             elif event == Events.OBJECT_CLOSE:
                 # The object has closed.
                 # Pop it from the current path.
                 path.pop()
-                continue
 
             elif event == Events.ARRAY_OPEN:
                 # An array has opened.
@@ -609,27 +615,20 @@ class Parser:
                 # For each unyielded path, attempt to match it against the
                 # current path. If it matches, yield the event and remove the
                 # path index from the unyielded set.
-                yielded = False
                 for i in unyielded_path_idxs:
                     if path == paths[i]:
-                        # Reset the parser state such that the next call will
-                        # re-yield this same ARRAY_OPEN to make load() work.
-                        yield path, self.load(parse_gen)
                         unyielded_path_idxs.remove(i)
-                        yielded = True
-                        break
+                        item = path, self.load(parse_gen)
                 if not yielded:
                     # If this container was not already load()ed and yielded,
                     # Append an array index of -1 to the current path, to be
                     # increment on the next parsed array value.
                     path.append(-1)
-                continue
 
             elif event == Events.ARRAY_CLOSE:
                 # The array has closed.
                 # Pop it from the current path.
                 path.pop()
-                continue
 
             elif event == Events.OBJECT_KEY:
                 # We parsed an object key.
@@ -649,9 +648,8 @@ class Parser:
                 # path index from the unyielded set.
                 for i in unyielded_path_idxs:
                     if path == paths[i]:
-                        yield path, self.convert(event, value)
                         unyielded_path_idxs.remove(i)
-                        break
+                        item = path, self.convert(event, value)
 
             elif (event == Events.OBJECT_VALUE_STRING
                   or event == Events.OBJECT_VALUE_NUMBER
@@ -664,13 +662,8 @@ class Parser:
                 # path index from the unyielded set.
                 for i in unyielded_path_idxs:
                     if path == paths[i]:
-                        yield path, self.convert(event, value)
                         unyielded_path_idxs.remove(i)
-                        break
-
-            # Abort if all of the requested paths have been yielded.
-            if len(unyielded_path_idxs) == 0:
-                return
+                        item = path, self.convert(event, value)
 
     async def load(self, parse_gen=None):
         # If parse_gen is specified, parse the single next value in the stream,
