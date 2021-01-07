@@ -14,17 +14,18 @@ class AsyncGenerator:
 
     async def __anext__(self):
         v = await self.next()
-        if v is not None:
-            return v
-        else:
+        if v is StopIteration:
             raise StopAsyncIteration
+        return v
 
     async def next(self):
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
         try:
+            if hasattr(self.gen, '__anext__'):
+                return await self.gen.__anext__()
             return next(self.gen)
         except StopIteration:
-            return None
+            return StopIteration
 
 ###############################################################################
 # Exceptions
@@ -300,12 +301,12 @@ class Parser:
         # Yield any remaining digits.
         yield from self.yield_while(is_digit)
 
-    async def parse(self):
+    def parse(self):
         """AsyncGenerator parse() wrapper.
         """
         return AsyncGenerator(self._parse())
 
-    async def _parse(self):
+    def _parse(self):
         # Start parsing self.stream.
         while True:
             # Get the next event.
@@ -548,12 +549,12 @@ class Parser:
             return float(s) if PERIOD in s else int(s)
         raise NotImplementedError(event, value)
 
-    async def yield_paths(self, paths):
+    def yield_paths(self, paths):
         """AsyncGenerator yield_paths() wrapper.
         """
         return AsyncGenerator(self._yield_paths(paths))
 
-    async def _yield_paths(self, paths):
+    def _yield_paths(self, paths):
         # Yield ( <path>, <value-generator> ) tuples for all specified paths
         # that exist in the data.
         #
@@ -568,10 +569,8 @@ class Parser:
         unyielded_path_idxs = set(range(len(paths)))
         # Define the current path stack.
         path = []
-        parse_gen = self.parse()
-        async for event, value in parse_gen:
-            # Yield control.
-            await asyncio.sleep(0)
+        parse_gen = self._parse()
+        for event, value in parse_gen:
             if event == Events.OBJECT_OPEN:
                 # An object has opened.
                 # If the current path node is an array index, increment it.
@@ -678,7 +677,7 @@ class Parser:
         # otherwise parse the entire stream, and return a single Python object,
         # similar to the built-in json.load() / json.loads() behavior.
         if parse_gen is None:
-            parse_gen = await self.parse()
+            parse_gen = self.parse()
 
         # Initialize the value based on the first read.
         event, value = await parse_gen.__anext__()
@@ -689,8 +688,6 @@ class Parser:
             or event == Events.NULL
             or event == Events.TRUE
             or event == Events.FALSE):
-            # Yield control.
-            await asyncio.sleep(0)
             return self.convert(event, value)
 
         # Create an initial, root object to represent the initial container.
@@ -768,82 +765,6 @@ class Parser:
                 # Use the last-parsed object key to create an item in the
                 # current object container.
                 container[key] = self.convert(event, value)
-            # Yield control.
-            await asyncio.sleep(0)
 
         # Return the mutated root object.
         return root
-
-###############################################################################
-# CLI
-###############################################################################
-
-async def main(fh, action, paths):
-    parser = Parser(fh)
-    if action == 'load':
-        if not paths:
-            # Load it all and pretty-print the result.
-            print(dumps(await parser.load(), indent=2))
-        else:
-            # Load only the specified paths.
-            result = {}
-            # Assert that no path is the prefix of another, indicating both
-            # a container and sub sub-object which won't work because the
-            # container itself will be read/consumed before the sub-object
-            # ever has a chance.
-            num_paths = len(paths)
-            for a in paths:
-                for b in paths:
-                    if a == b:
-                        continue
-                    if b.startswith(a) and b[len(a)] == '.':
-                        arg_parser.error(
-                            'Specifying container sub-elements ({}) and the '\
-                            'container itself ({}) is not supported.'
-                            .format(b, a)
-                        )
-            # Convert the dot-delimited paths to path segments lists as
-            # required by Parser.yield_paths().
-            paths = list(map(convert_dot_path_to_yield_path, paths))
-            path_gen = parser.yield_paths(paths)
-            async for key, value in path_gen:
-                # Convert the yielded key back to a dot path.
-                key = convert_yielded_key_to_dot_path(key)
-                result[key] = value
-            # Print the result as JSON.
-            print(dumps(result, indent=2))
-
-    elif action == 'parse':
-        parse_gen = parser.parse()
-        async for event, value in parse_gen:
-            if value is not None:
-                value = parser.convert(event, value)
-            print(event, value)
-
-if __name__ == '__main__':
-    import argparse
-    from io import BytesIO
-    from json import dumps
-
-    arg_parser = argparse.ArgumentParser()
-
-    g = arg_parser.add_mutually_exclusive_group()
-    g.add_argument('--file', type=argparse.FileType('rb'))
-    g.add_argument('--string', type=str)
-
-    arg_parser.add_argument('--action', choices=('load', 'parse'),
-                            default="load")
-    arg_parser.add_argument('--path', type=str, action='append',
-                            help='Dot-delimited path specifier with dots in '\
-                            'keys escaped as a double-dot')
-    args = arg_parser.parse_args()
-
-    if args.path and args.action != 'load':
-        arg_parser.error('Please specify --action=load when using --path')
-
-
-    fh = args.file if not args.string else BytesIO(args.string.encode('utf-8'))
-
-    asyncio.get_event_loop().run_until_complete(
-        main(fh, args.action, args.path)
-    )
